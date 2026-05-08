@@ -2,6 +2,7 @@
   const currentScript = document.currentScript;
   const siteId = currentScript?.dataset?.siteId || 'unknown_site';
   const apiUrl = currentScript?.dataset?.apiUrl || 'http://localhost:3000';
+  const wsUrl = currentScript?.dataset?.wsUrl || apiUrl.replace(/^http/i, 'ws');
   const visitorIdKey = `raspi_chat_visitor_${siteId}`;
 
   let visitorId = localStorage.getItem(visitorIdKey);
@@ -17,7 +18,10 @@
     .raspi-chat-panel.open{display:flex}
     .raspi-chat-header{padding:16px;background:#172033;color:#fff;font-weight:800}
     .raspi-chat-messages{flex:1;padding:14px;overflow:auto;background:#f4f6fb;color:#172033;font-size:14px}
-    .raspi-chat-message{margin:0 0 10px;padding:10px 12px;border-radius:14px;background:#fff}
+    .raspi-chat-message{margin:0 0 10px;padding:10px 12px;border-radius:14px;background:#fff;line-height:1.45}
+    .raspi-chat-message.operator{background:#dfe8ff;margin-left:18px}
+    .raspi-chat-message.visitor{background:#fff;margin-right:18px}
+    .raspi-chat-system{opacity:.7;font-size:12px;padding:4px 2px}
     .raspi-chat-form{display:flex;gap:8px;padding:12px;border-top:1px solid #e7ebf3}
     .raspi-chat-input{flex:1;border:1px solid #d7deea;border-radius:12px;padding:10px;font:14px system-ui}
     .raspi-chat-send{border:0;border-radius:12px;background:#4f6bff;color:#fff;padding:0 14px;font-weight:800;cursor:pointer}
@@ -31,9 +35,9 @@
   const panel = document.createElement('section');
   panel.className = 'raspi-chat-panel';
   panel.innerHTML = `
-    <div class="raspi-chat-header">Напишите нам</div>
+    <div class="raspi-chat-header">StackWorks Support</div>
     <div class="raspi-chat-messages" data-role="messages">
-      <div class="raspi-chat-message">Здравствуйте! Чем можем помочь?</div>
+      <div class="raspi-chat-message operator">Здравствуйте! Чем можем помочь?</div>
     </div>
     <form class="raspi-chat-form" data-role="form">
       <input class="raspi-chat-input" data-role="input" placeholder="Ваше сообщение" autocomplete="off" />
@@ -47,24 +51,68 @@
   const form = panel.querySelector('[data-role="form"]');
   const input = panel.querySelector('[data-role="input"]');
 
+  let socket = null;
+  let reconnectTimer = null;
+
   button.addEventListener('click', () => {
     panel.classList.toggle('open');
   });
 
-  function addMessage(text) {
+  function addMessage(text, type = 'visitor') {
     const item = document.createElement('div');
-    item.className = 'raspi-chat-message';
+    item.className = `raspi-chat-message ${type}`;
     item.textContent = text;
     messages.appendChild(item);
     messages.scrollTop = messages.scrollHeight;
   }
 
+  function addSystem(text) {
+    const item = document.createElement('div');
+    item.className = 'raspi-chat-system';
+    item.textContent = text;
+    messages.appendChild(item);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function connectWs() {
+    if (socket && (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    socket = new WebSocket(`${wsUrl}/ws?siteId=${encodeURIComponent(siteId)}&visitorId=${encodeURIComponent(visitorId)}`);
+
+    socket.addEventListener('open', () => {
+      addSystem('Оператор подключен');
+    });
+
+    socket.addEventListener('message', (event) => {
+      try {
+        const payload = JSON.parse(event.data);
+
+        if (payload.type === 'operator_message') {
+          addMessage(payload.message?.body || 'Новое сообщение от оператора', 'operator');
+        }
+      } catch {
+        // ignore invalid frames
+      }
+    });
+
+    socket.addEventListener('close', () => {
+      addSystem('Соединение потеряно, переподключение...');
+      clearTimeout(reconnectTimer);
+      reconnectTimer = setTimeout(connectWs, 3000);
+    });
+  }
+
+  connectWs();
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const message = input.value.trim();
     if (!message) return;
+
     input.value = '';
-    addMessage(message);
+    addMessage(message, 'visitor');
 
     try {
       const response = await fetch(`${apiUrl}/api/widget/message`, {
@@ -72,10 +120,13 @@
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({ siteId, visitorId, message })
       });
+
       const result = await response.json();
-      if (!result.ok) addMessage(`Ошибка: ${result.error || 'message rejected'}`);
-    } catch (error) {
-      addMessage('Сообщение не отправилось. Проверьте соединение.');
+      if (!result.ok) {
+        addSystem(`Ошибка: ${result.error || 'message rejected'}`);
+      }
+    } catch {
+      addSystem('Сообщение не отправилось. Проверьте соединение.');
     }
   });
 })();
