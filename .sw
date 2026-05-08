@@ -1,6 +1,6 @@
 # Development state snapshot
 
-Project: VPS Telegram Live Chat
+Project: WSChat
 Repository: https://github.com/viktor138irk/chat
 Owner: viktor138irk
 Default branch: main
@@ -12,6 +12,24 @@ This file is a compact project memory for continuing development in a new chat/d
 Build a self-hosted live chat system similar to Jivo, but with Telegram as the operator interface.
 
 Website visitors use an embeddable widget. Messages go to selected Telegram operators. Operators reply in Telegram, and replies return to the website widget.
+
+## Current architecture
+
+The architecture is VPS-only.
+
+```text
+Website with embedded widget
+  -> widget.example.ru static widget.js on VPS/FastPanel
+  -> api.example.ru public HTTPS endpoint on VPS/FastPanel
+  -> local reverse proxy to Node.js backend on VPS
+  -> SQLite on VPS
+  -> Telegram bot API / optional SOCKS5
+  -> Telegram operators
+
+Admin user
+  -> admin.example.ru static admin panel on VPS/FastPanel
+  -> api.example.ru backend on same VPS
+```
 
 ## Architecture decision update
 
@@ -39,24 +57,10 @@ VPS with FastPanel runs everything:
 
 Raspberry Pi is removed from MVP architecture. It can be revisited later as an optional edge node, but not for the first production version.
 
-## Main VPS-only architecture
-
-```text
-Website with embedded widget
-  -> widget.example.ru static widget.js on VPS/FastPanel
-  -> api.example.ru public HTTPS endpoint on VPS/FastPanel
-  -> local reverse proxy to Node.js backend on VPS
-  -> SQLite on VPS
-  -> Telegram bot API / optional SOCKS5
-  -> Telegram operators
-
-Admin user
-  -> admin.example.ru static admin panel on VPS/FastPanel
-  -> api.example.ru backend on same VPS
-```
-
 ## Deployment decisions
 
+- Project name: WSChat.
+- Main project directory: `/opt/ws-chat`.
 - Cloudflare must not be used because of availability issues in Russia.
 - Everything runs on VPS with FastPanel.
 - FastPanel must manage domains, SSL, and web server configs manually.
@@ -94,10 +98,11 @@ FastPanel webroots are expected to look like:
 The backend source and runtime should live outside public webroots:
 
 ```text
-/opt/raspi-chat/source
-/opt/raspi-chat/data
-/opt/raspi-chat/logs
-/opt/raspi-chat/backups
+/opt/ws-chat/source
+/opt/ws-chat/data
+/opt/ws-chat/logs
+/opt/ws-chat/backups
+/opt/ws-chat/updates
 ```
 
 `api.example.ru` may have a webroot created by FastPanel, but project files must not be published there. It should proxy to:
@@ -157,7 +162,7 @@ Future update mechanism:
 Recommended project directory on VPS:
 
 ```text
-/opt/raspi-chat/
+/opt/ws-chat/
   source/
   updates/
   backups/
@@ -176,8 +181,8 @@ FastPanel owns public directories:
 Backend should be managed by PM2:
 
 ```text
-pm2 process: raspi-chat-backend
-entry: /opt/raspi-chat/source/backend/src/server.js
+pm2 process: wschat-backend
+entry: /opt/ws-chat/source/backend/src/server.js
 ```
 
 ## FastPanel safety rules
@@ -248,17 +253,17 @@ Use VPS-only deployment.
 │   └── src/
 │       └── widget.js
 ├── deploy/
-│   └── deploy-agent/
+│   ├── deploy-agent/
+│   └── vps/
 │       ├── .env.example
-│       ├── package.json
-│       └── src/
-│           └── deploy-frontend.js
+│       └── bootstrap.sh
 └── docs/
     ├── FASTPANEL.md
     ├── FASTPANEL_MANUAL_FRONTEND.md
     ├── INSTALL.md
     ├── RASPBERRY_PI.md
-    └── UPDATE_BUNDLE.md
+    ├── UPDATE_BUNDLE.md
+    └── VPS_ONLY_INSTALL.md
 ```
 
 ## Implemented so far
@@ -304,7 +309,7 @@ APP_HOST=127.0.0.1
 APP_PORT=3000
 PUBLIC_API_URL=https://api.example.ru
 PUBLIC_WS_URL=wss://api.example.ru/ws
-DATABASE_PATH=/opt/raspi-chat/data/chat.sqlite
+DATABASE_PATH=/opt/ws-chat/data/chat.sqlite
 ```
 
 ### Admin panel
@@ -362,8 +367,8 @@ It currently focuses on frontend publishing:
 Need to extend deployment process for VPS-only backend:
 
 - install backend deps
-- keep `/opt/raspi-chat/data` persistent
-- restart PM2 process `raspi-chat-backend`
+- keep `/opt/ws-chat/data` persistent
+- restart PM2 process `wschat-backend`
 - never expose backend on public port
 
 Important env variable:
@@ -374,11 +379,12 @@ FASTPANEL_SAFE_MODE=true
 
 ## Existing docs
 
-- `docs/INSTALL.md`: old full install guide for VPS + Raspberry Pi; needs rewrite for VPS-only.
+- `docs/VPS_ONLY_INSTALL.md`: current VPS-only install guide.
+- `docs/INSTALL.md`: old full install guide for VPS + Raspberry Pi; deprecated.
 - `docs/FASTPANEL.md`: FastPanel-safe deployment guide; needs update for backend on same VPS.
 - `docs/FASTPANEL_MANUAL_FRONTEND.md`: manual frontend installation through FastPanel.
 - `docs/RASPBERRY_PI.md`: now historical/optional, not MVP.
-- `docs/UPDATE_BUNDLE.md`: future update bundle workflow; needs update for backend on VPS.
+- `docs/UPDATE_BUNDLE.md`: future update bundle workflow; needs update for backend on VPS and `/opt/ws-chat`.
 
 ## Important previous commits
 
@@ -390,20 +396,20 @@ FASTPANEL_SAFE_MODE=true
 - Manual FastPanel frontend guide: `ba08112dc628fd276a2f8eade63145b32aa42c95`
 - Update bundle workflow: `b1fa5ead43f33e80c7208b98bcea6e0fa68d5682`
 - Raspberry armhf bootstrap fix: `fbe84c8b16a51cdd4931ecf0b1e0fa8654edec6a`
-- Architecture switched to VPS-only after Raspberry issues: current update
+- Architecture switched to VPS-only after Raspberry issues: `28b0ca37c4032633811cce4dc096d1c714c5d5a2`
+- Project path renamed to `/opt/ws-chat` and PM2 process to `wschat-backend`: current updates
 
 ## Next development steps
 
-1. Update docs to VPS-only architecture.
-2. Update `.env.example` for VPS-only defaults.
-3. Add VPS bootstrap/deploy script:
-   - install Node.js
-   - install PM2
-   - create `/opt/raspi-chat/data`
+1. Finish updating docs to WSChat/VPS-only architecture.
+2. Update package names/descriptions from raspi-chat to wschat where useful.
+3. Add VPS backend deploy/update script:
+   - install backend deps
+   - create `/opt/ws-chat/data`
    - prepare backend env
    - build admin/widget
    - publish static files safely
-   - start/restart backend with PM2
+   - start/restart backend with PM2 `wschat-backend`
 4. Fix widget production build so it outputs stable `widget.js`.
 5. Add SQLite database layer:
    - sites
@@ -440,6 +446,7 @@ FASTPANEL_SAFE_MODE=true
 - User wants manual control over domains in FastPanel.
 - User wants future auto-update file/bundle workflow.
 - User changed architecture to VPS-only after Raspberry issues.
+- User named the system WSChat and chose `/opt/ws-chat` as the project path.
 
 ## How to continue in a new chat
 
@@ -448,5 +455,5 @@ Open this file first. Then continue from "Next development steps".
 Recommended next task:
 
 ```text
-Update project files/docs for VPS-only architecture, then implement SQLite schema and message persistence.
+Finish WSChat/VPS-only cleanup, then implement SQLite schema and message persistence.
 ```
