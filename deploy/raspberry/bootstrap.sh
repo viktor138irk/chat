@@ -13,19 +13,35 @@ if [[ "${EUID}" -eq 0 ]]; then
   exit 1
 fi
 
+ARCH="$(dpkg --print-architecture)"
+
+log "Detected architecture: ${ARCH}"
 log "Updating system packages"
 sudo apt update
 sudo apt upgrade -y
 
 log "Installing base packages"
-sudo apt install -y git curl sqlite3 ufw fail2ban wireguard rsync ca-certificates gnupg
+sudo apt install -y git curl sqlite3 ufw fail2ban wireguard rsync ca-certificates gnupg build-essential python3 make g++
 
-if ! command -v node >/dev/null 2>&1 || ! node -v | grep -q "^v${NODE_MAJOR}\."; then
-  log "Installing Node.js ${NODE_MAJOR}.x"
+install_node_from_debian_repo() {
+  log "Installing Node.js from Raspberry Pi/Debian repository for ${ARCH}"
+  sudo apt install -y nodejs npm
+}
+
+install_node_from_nodesource() {
+  log "Installing Node.js ${NODE_MAJOR}.x from NodeSource for ${ARCH}"
   curl -fsSL "https://deb.nodesource.com/setup_${NODE_MAJOR}.x" | sudo -E bash -
   sudo apt install -y nodejs
+}
+
+if ! command -v node >/dev/null 2>&1; then
+  if [[ "${ARCH}" == "armhf" ]]; then
+    install_node_from_debian_repo
+  else
+    install_node_from_nodesource
+  fi
 else
-  log "Node.js ${NODE_MAJOR}.x already installed"
+  log "Node.js already installed: $(node -v)"
 fi
 
 log "Node version: $(node -v)"
