@@ -13,9 +13,14 @@ const bool = (value, fallback = false) => {
   return ['1', 'true', 'yes', 'on'].includes(String(value).toLowerCase());
 };
 
+const appEnv = process.env.APP_ENV || 'development';
+const defaultDatabasePath = appEnv === 'production'
+  ? '/opt/ws-chat/data/chat.sqlite'
+  : './data/chat.sqlite';
+
 export const config = {
   app: {
-    env: process.env.APP_ENV || 'development',
+    env: appEnv,
     host: process.env.APP_HOST || '127.0.0.1',
     port: Number(process.env.APP_PORT || 3000),
     trustProxy: bool(process.env.TRUST_PROXY, true),
@@ -23,7 +28,7 @@ export const config = {
     publicWsUrl: process.env.PUBLIC_WS_URL || 'ws://localhost:3000/ws'
   },
   db: {
-    path: process.env.DATABASE_PATH || './data/chat.sqlite'
+    path: process.env.DATABASE_PATH || defaultDatabasePath
   },
   cors: {
     adminOrigin: process.env.ADMIN_ORIGIN || 'http://localhost:5173',
