@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
+import { randomUUID } from 'node:crypto';
 import { config } from './config.js';
 import {
   createVisitorMessage,
@@ -18,6 +19,7 @@ import {
   getTelegramBridgeStatus,
   notifyOperatorsAboutVisitorMessage,
   restartTelegramBridge,
+  setOperatorMessageNotifier,
   startTelegramBridge
 } from './telegram.js';
 
@@ -47,6 +49,57 @@ await app.register(rateLimit, {
 await app.register(websocket);
 
 const clients = new Map();
+
+function getClientKey(siteId, visitorId) {
+  return `${siteId || 'unknown_site'}:${visitorId || 'unknown_visitor'}`;
+}
+
+function sendJson(connection, payload) {
+  try {
+    connection.send(JSON.stringify(payload));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function broadcastToVisitor({ siteId, visitorId, payload }) {
+  const key = getClientKey(siteId, visitorId);
+  const bucket = clients.get(key);
+  if (!bucket || bucket.size === 0) return 0;
+
+  let sent = 0;
+  for (const connection of bucket) {
+    if (sendJson(connection, payload)) sent += 1;
+  }
+  return sent;
+}
+
+setOperatorMessageNotifier(({ conversation, message, operator }) => {
+  const sent = broadcastToVisitor({
+    siteId: conversation.site_id,
+    visitorId: conversation.visitor_key,
+    payload: {
+      type: 'operator_message',
+      conversationId: conversation.id,
+      message: {
+        id: message.id,
+        direction: 'operator',
+        body: message.body,
+        createdAt: message.created_at,
+        operator: {
+          id: operator.id,
+          name: operator.name || 'Оператор'
+        }
+      }
+    }
+  });
+
+  app.log.info(
+    { conversationId: conversation.id, visitorId: conversation.visitor_key, sent },
+    'Operator Telegram answer delivered to widget clients'
+  );
+});
 
 function validateSocks5Settings(settings) {
   const proxy = settings.proxy || {};
@@ -95,7 +148,8 @@ app.get('/health', async () => ({
   service: 'wschat-backend',
   env: config.app.env,
   dbPath: config.db.path,
-  telegram: getTelegramBridgeStatus()
+  telegram: getTelegramBridgeStatus(),
+  wsClients: Array.from(clients.values()).reduce((sum, bucket) => sum + bucket.size, 0)
 }));
 
 app.get('/api/config/public', async () => ({
@@ -216,14 +270,21 @@ app.post('/api/widget/message', async (request) => {
 });
 
 app.get('/ws', { websocket: true }, (connection, request) => {
-  const visitorId = request.query?.visitorId || crypto.randomUUID();
-  clients.set(visitorId, connection);
+  const siteId = String(request.query?.siteId || request.query?.widgetKey || 'unknown_site');
+  const visitorId = String(request.query?.visitorId || `visitor_${randomUUID()}`);
+  const key = getClientKey(siteId, visitorId);
+
+  if (!clients.has(key)) clients.set(key, new Set());
+  clients.get(key).add(connection);
 
   connection.on('close', () => {
-    clients.delete(visitorId);
+    const bucket = clients.get(key);
+    if (!bucket) return;
+    bucket.delete(connection);
+    if (bucket.size === 0) clients.delete(key);
   });
 
-  connection.send(JSON.stringify({ type: 'connected', visitorId }));
+  sendJson(connection, { type: 'connected', siteId, visitorId });
 });
 
 try {
