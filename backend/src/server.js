@@ -10,6 +10,7 @@ import {
   getSiteByWidgetKey,
   getStats,
   getTelegramSettings,
+  isAllowedWidgetOrigin,
   listRecentMessages,
   migrate,
   touchVisitor,
@@ -35,8 +36,11 @@ const app = Fastify({
 await app.register(cors, {
   origin(origin, callback) {
     if (!origin) return callback(null, true);
-    const allowed = new Set([config.cors.adminOrigin, config.cors.widgetOrigin]);
-    callback(null, allowed.has(origin));
+
+    const staticAllowed = new Set([config.cors.adminOrigin, config.cors.widgetOrigin]);
+    const allowed = staticAllowed.has(origin) || isAllowedWidgetOrigin(origin);
+
+    callback(null, allowed);
   },
   credentials: true
 });
