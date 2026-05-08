@@ -14,6 +14,11 @@ import {
   touchVisitor,
   updateTelegramSettings
 } from './db.js';
+import {
+  getTelegramBridgeStatus,
+  notifyOperatorsAboutVisitorMessage,
+  startTelegramBridge
+} from './telegram.js';
 
 migrate();
 
@@ -80,14 +85,15 @@ function validateSocks5Settings(settings) {
   return {
     ok: true,
     status: 'configured',
-    message: `SOCKS5 включен: ${proxy.host}:${proxy.port}. Полная проверка Telegram будет доступна после подключения bot bridge.`
+    message: `SOCKS5 включен: ${proxy.host}:${proxy.port}. Telegram bridge сможет использовать этот прокси.`
   };
 }
 
 app.get('/health', async () => ({
   ok: true,
   service: 'wschat-backend',
-  env: config.app.env
+  env: config.app.env,
+  telegram: getTelegramBridgeStatus()
 }));
 
 app.get('/api/config/public', async () => ({
@@ -97,7 +103,8 @@ app.get('/api/config/public', async () => ({
 
 app.get('/api/admin/stats', async () => ({
   ok: true,
-  stats: getStats()
+  stats: getStats(),
+  telegram: getTelegramBridgeStatus()
 }));
 
 app.get('/api/admin/messages', async (request) => {
@@ -110,7 +117,8 @@ app.get('/api/admin/messages', async (request) => {
 
 app.get('/api/admin/telegram/settings', async () => ({
   ok: true,
-  settings: getTelegramSettings()
+  settings: getTelegramSettings(),
+  bridge: getTelegramBridgeStatus()
 }));
 
 app.post('/api/admin/telegram/settings', async (request, reply) => {
@@ -119,7 +127,8 @@ app.post('/api/admin/telegram/settings', async (request, reply) => {
 
     return {
       ok: true,
-      settings
+      settings,
+      bridge: getTelegramBridgeStatus()
     };
   } catch (error) {
     reply.code(400);
@@ -136,7 +145,8 @@ app.post('/api/admin/telegram/test-proxy', async () => {
 
   return {
     ...result,
-    settings: getTelegramSettings()
+    settings: getTelegramSettings(),
+    bridge: getTelegramBridgeStatus()
   };
 });
 
@@ -178,13 +188,22 @@ app.post('/api/widget/message', async (request) => {
     body: messageBody
   });
 
+  await notifyOperatorsAboutVisitorMessage({
+    site,
+    visitor,
+    conversation,
+    message,
+    logger: request.log
+  });
+
   request.log.info({ siteId: site.id, visitorId: visitor.id, conversationId: conversation.id, messageId: message.id }, 'Widget message saved');
 
   return {
     ok: true,
     status: 'saved',
     conversationId: conversation.id,
-    messageId: message.id
+    messageId: message.id,
+    telegram: getTelegramBridgeStatus()
   };
 });
 
@@ -198,6 +217,8 @@ app.get('/ws', { websocket: true }, (connection, request) => {
 
   connection.send(JSON.stringify({ type: 'connected', visitorId }));
 });
+
+await startTelegramBridge({ logger: app.log });
 
 try {
   await app.listen({ host: config.app.host, port: config.app.port });
