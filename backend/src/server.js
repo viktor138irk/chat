@@ -86,7 +86,7 @@ function validateSocks5Settings(settings) {
   return {
     ok: true,
     status: 'configured',
-    message: `SOCKS5 включен: ${proxy.host}:${proxy.port}. Telegram bridge сможет использовать этот прокси.`
+    message: `SOCKS5 включен: ${proxy.host}:${proxy.port}. Настройки сохранены, bridge можно перезапустить отдельно.`
   };
 }
 
@@ -125,12 +125,12 @@ app.get('/api/admin/telegram/settings', async () => ({
 app.post('/api/admin/telegram/settings', async (request, reply) => {
   try {
     const settings = updateTelegramSettings(request.body || {});
-    const bridge = await restartTelegramBridge({ logger: app.log });
 
     return {
       ok: true,
       settings,
-      bridge
+      bridge: getTelegramBridgeStatus(),
+      message: 'Настройки сохранены. Перезапустите Telegram bridge отдельной кнопкой после проверки прокси.'
     };
   } catch (error) {
     reply.code(400);
