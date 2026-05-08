@@ -50,17 +50,29 @@
         color: rgba(255, 255, 255, 0.86);
         font-weight: 700;
       }
+
+      code {
+        display: inline-block;
+        margin-top: 12px;
+        padding: 10px 14px;
+        border-radius: 12px;
+        background: rgba(0,0,0,.28);
+        color: #9ec1ff;
+      }
     </style>
   </head>
   <body>
     <main>
       <h1>WSChat</h1>
-      <p>Тестовая страница виджета StackWorks. Нажмите кнопку чата в правом нижнем углу, отправьте сообщение, затем ответьте на него в Telegram reply-сообщением.</p>
+      <p>Self-hosted live support by StackWorks. Telegram operators receive messages instantly and can answer directly from Telegram.</p>
+
       <div class="hint">Кнопка чата находится справа снизу</div>
+
+      <code>&lt;script src="https://widget.stackworks.ru/widget.js" data-site-id="site_default"&gt;&lt;/script&gt;</code>
     </main>
 
     <script
-      src="/src/widget.js"
+      src="/widget.js"
       data-site-id="site_default"
       data-api-url="https://api.stackworks.ru"
       data-ws-url="wss://api.stackworks.ru"
