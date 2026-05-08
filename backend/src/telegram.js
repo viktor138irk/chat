@@ -33,7 +33,9 @@ function buildProxyAgent(proxy) {
     ? `${encodeURIComponent(proxy.username)}:${encodeURIComponent(proxy.password || '')}@`
     : '';
 
-  return new SocksProxyAgent(`socks5://${auth}${proxy.host}:${proxy.port}`);
+  // socks5h forces DNS resolution through the proxy. This is required when Telegram
+  // is not reachable/resolvable directly from the VPS network.
+  return new SocksProxyAgent(`socks5h://${auth}${proxy.host}:${proxy.port}`);
 }
 
 function buildTelegramOptions(settings) {
