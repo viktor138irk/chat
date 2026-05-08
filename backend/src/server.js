@@ -3,6 +3,17 @@ import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
 import { config } from './config.js';
+import {
+  createVisitorMessage,
+  getOrCreateOpenConversation,
+  getSiteByWidgetKey,
+  getStats,
+  listRecentMessages,
+  migrate,
+  touchVisitor
+} from './db.js';
+
+migrate();
 
 const app = Fastify({
   logger: {
@@ -40,22 +51,64 @@ app.get('/api/config/public', async () => ({
   wsUrl: config.app.publicWsUrl
 }));
 
+app.get('/api/admin/stats', async () => ({
+  ok: true,
+  stats: getStats()
+}));
+
+app.get('/api/admin/messages', async (request) => {
+  const limit = Math.min(Math.max(Number(request.query?.limit || 50), 1), 200);
+  return {
+    ok: true,
+    messages: listRecentMessages(limit)
+  };
+});
+
 app.post('/api/widget/message', async (request) => {
   const body = request.body || {};
-  const siteId = String(body.siteId || '');
-  const visitorId = String(body.visitorId || '');
-  const message = String(body.message || '').trim();
+  const siteId = String(body.siteId || body.widgetKey || '');
+  const visitorKey = String(body.visitorId || '').trim();
+  const messageBody = String(body.message || '').trim();
 
-  if (!siteId || !visitorId || !message) {
+  if (!siteId || !visitorKey || !messageBody) {
     return { ok: false, error: 'siteId, visitorId and message are required' };
   }
 
-  request.log.info({ siteId, visitorId }, 'Widget message received');
+  if (messageBody.length > 5000) {
+    return { ok: false, error: 'message is too long' };
+  }
+
+  const site = getSiteByWidgetKey(siteId);
+  if (!site) {
+    return { ok: false, error: 'unknown or inactive site' };
+  }
+
+  const visitor = touchVisitor({
+    siteId: site.id,
+    visitorKey,
+    userAgent: request.headers['user-agent'] || '',
+    ip: request.ip
+  });
+
+  const conversation = getOrCreateOpenConversation({
+    siteId: site.id,
+    visitorId: visitor.id
+  });
+
+  const message = createVisitorMessage({
+    conversationId: conversation.id,
+    siteId: site.id,
+    visitorId: visitor.id,
+    body: messageBody
+  });
+
+  request.log.info({ siteId: site.id, visitorId: visitor.id, conversationId: conversation.id, messageId: message.id }, 'Widget message saved');
 
   return {
     ok: true,
-    status: 'accepted',
-    note: 'Telegram forwarding and persistence will be implemented next.'
+    status: 'saved',
+    conversationId: conversation.id,
+    messageId: message.id
   };
 });
 
