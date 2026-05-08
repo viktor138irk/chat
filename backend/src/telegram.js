@@ -33,8 +33,6 @@ function buildProxyAgent(proxy) {
     ? `${encodeURIComponent(proxy.username)}:${encodeURIComponent(proxy.password || '')}@`
     : '';
 
-  // socks5h forces DNS resolution through the proxy. This is required when Telegram
-  // is not reachable/resolvable directly from the VPS network.
   return new SocksProxyAgent(`socks5h://${auth}${proxy.host}:${proxy.port}`);
 }
 
@@ -61,7 +59,7 @@ export async function stopTelegramBridge(reason = 'restart') {
     try {
       await bot.stop(reason);
     } catch {
-      // Telegraf can throw if polling was never started. Safe to ignore on restart.
+      // Safe to ignore when polling was not started yet.
     }
   }
 
@@ -97,9 +95,9 @@ export async function startTelegramBridge({ logger } = {}) {
   }
 
   try {
-    bot = new Telegraf(token, buildTelegramOptions(settings));
+    const nextBot = new Telegraf(token, buildTelegramOptions(settings));
 
-    bot.start(async (ctx) => {
+    nextBot.start(async (ctx) => {
       const from = ctx.from || {};
       const operator = upsertTelegramOperator({
         telegramUserId: from.id,
@@ -108,11 +106,11 @@ export async function startTelegramBridge({ logger } = {}) {
       });
 
       await ctx.reply(
-        `✅ WSChat оператор подключён.\n\nID: ${operator.id}\nTelegram: ${from.username ? '@' + from.username : from.id}\n\nТеперь новые сообщения сайта будут приходить сюда.`
+        `WSChat operator connected.\n\nID: ${operator.id}\nTelegram: ${from.username ? '@' + from.username : from.id}\n\nNew site messages will come here.`
       );
     });
 
-    bot.command('status', async (ctx) => {
+    nextBot.command('status', async (ctx) => {
       const status = getTelegramBridgeStatus();
       await ctx.reply(
         `WSChat bridge\n` +
@@ -122,13 +120,13 @@ export async function startTelegramBridge({ logger } = {}) {
       );
     });
 
-    bot.on('text', async (ctx) => {
+    nextBot.on('text', async (ctx) => {
       const text = ctx.message?.text || '';
       if (!text || text.startsWith('/')) return;
 
       const operator = getOperatorByTelegramUserId(ctx.from.id);
       if (!operator) {
-        await ctx.reply('Сначала отправьте /start, чтобы зарегистрироваться оператором.');
+        await ctx.reply('Send /start first to register as operator.');
         return;
       }
 
@@ -137,14 +135,14 @@ export async function startTelegramBridge({ logger } = {}) {
       const match = sourceText.match(/Conversation:\s*(conv_[a-zA-Z0-9_-]+)/);
 
       if (!match) {
-        await ctx.reply('Ответьте реплаем на сообщение WSChat, чтобы отправить ответ посетителю.');
+        await ctx.reply('Reply to a WSChat notification message to answer a visitor.');
         return;
       }
 
       const conversationId = match[1];
       const conversation = getConversationWithVisitor(conversationId);
       if (!conversation) {
-        await ctx.reply('Диалог не найден. Возможно, он был удалён.');
+        await ctx.reply('Conversation not found.');
         return;
       }
 
@@ -156,12 +154,12 @@ export async function startTelegramBridge({ logger } = {}) {
         telegramMessageId: String(ctx.message.message_id)
       });
 
-      await ctx.reply(`✅ Ответ сохранён для диалога ${conversationId}. Доставка в виджет будет включена на следующем шаге.`);
+      await ctx.reply(`Answer saved for conversation ${conversationId}.`);
     });
 
-    const me = await bot.telegram.getMe();
-    await bot.launch({ dropPendingUpdates: true });
+    const me = await nextBot.telegram.getMe();
 
+    bot = nextBot;
     botStatus = {
       enabled: true,
       running: true,
@@ -170,6 +168,15 @@ export async function startTelegramBridge({ logger } = {}) {
       proxyEnabled: Boolean(settings.proxy?.enabled),
       startedAt: new Date().toISOString()
     };
+
+    nextBot.launch({ dropPendingUpdates: true }).catch((error) => {
+      botStatus = {
+        ...botStatus,
+        running: false,
+        error: error.message
+      };
+      logger?.error?.(error, 'Telegram bridge polling failed');
+    });
 
     logger?.info?.({ username: botStatus.username, proxyEnabled: botStatus.proxyEnabled }, 'Telegram bridge started');
 
@@ -197,21 +204,21 @@ export async function notifyOperatorsAboutVisitorMessage({ site, visitor, conver
   if (operators.length === 0) return { ok: true, sent: 0, error: 'no active telegram operators' };
 
   const text = [
-    '💬 <b>Новое сообщение WSChat</b>',
+    'New WSChat message',
     '',
-    `<b>Сайт:</b> ${escapeHtml(site.domain || site.name || site.id)}`,
-    `<b>Visitor:</b> ${escapeHtml(visitor.visitor_key || visitor.id)}`,
-    `<b>Conversation:</b> ${escapeHtml(conversation.id)}`,
+    `Site: ${escapeHtml(site.domain || site.name || site.id)}`,
+    `Visitor: ${escapeHtml(visitor.visitor_key || visitor.id)}`,
+    `Conversation: ${escapeHtml(conversation.id)}`,
     '',
     escapeHtml(message.body),
     '',
-    'Ответьте реплаем на это сообщение, чтобы сохранить ответ оператором.'
+    'Reply to this message to save an operator answer.'
   ].join('\n');
 
   let sent = 0;
   for (const operator of operators) {
     try {
-      await bot.telegram.sendMessage(operator.telegram_user_id, text, { parse_mode: 'HTML' });
+      await bot.telegram.sendMessage(operator.telegram_user_id, text);
       sent += 1;
     } catch (error) {
       logger?.warn?.({ operatorId: operator.id, error: error.message }, 'Failed to notify Telegram operator');
