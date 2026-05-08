@@ -67,6 +67,14 @@ After attempted install, `node -v` and `npm -v` returned:
 Segmentation fault
 ```
 
+Then `apt purge` failed because dpkg package metadata was corrupted:
+
+```text
+dpkg: unrecoverable fatal error, aborting:
+ files list file for package 'node-lodash-packages' is missing final newline
+Error: Sub-process /usr/bin/dpkg returned an error code (2)
+```
+
 Action taken:
 
 - Updated `deploy/raspberry/bootstrap.sh` in commit `fbe84c8b16a51cdd4931ecf0b1e0fa8654edec6a`.
@@ -74,12 +82,13 @@ Action taken:
 - For `armhf`, it installs `nodejs npm` from Raspberry Pi/Debian apt repo instead of NodeSource.
 - For `arm64` and `amd64`, it can still use NodeSource.
 
-Next troubleshooting command sequence for this issue:
+Next troubleshooting command sequence for dpkg corruption:
 
 ```bash
-sudo rm -f /etc/apt/sources.list.d/nodesource.list
-sudo rm -f /etc/apt/keyrings/nodesource.gpg
-sudo apt update
+sudo cp /var/lib/dpkg/info/node-lodash-packages.list /var/lib/dpkg/info/node-lodash-packages.list.bak 2>/dev/null || true
+printf '\n' | sudo tee -a /var/lib/dpkg/info/node-lodash-packages.list >/dev/null
+sudo dpkg --configure -a
+sudo apt --fix-broken install
 sudo apt purge -y nodejs npm libnode* node-* || true
 sudo apt autoremove -y
 sudo apt clean
@@ -87,6 +96,20 @@ sudo apt update
 sudo apt install -y nodejs npm
 node -v
 npm -v
+```
+
+If that fails, move the corrupted dpkg info files aside and retry:
+
+```bash
+sudo mkdir -p /root/dpkg-node-lodash-packages-backup
+sudo mv /var/lib/dpkg/info/node-lodash-packages.* /root/dpkg-node-lodash-packages-backup/ 2>/dev/null || true
+sudo dpkg --configure -a
+sudo apt --fix-broken install
+sudo apt purge -y nodejs npm libnode* node-* || true
+sudo apt autoremove -y
+sudo apt clean
+sudo apt update
+sudo apt install -y nodejs npm
 ```
 
 If `node -v` still segfaults after clean apt install, strongly consider switching Raspberry Pi to Raspberry Pi OS Lite 64-bit or using backend runtime alternatives.
