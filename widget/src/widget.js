@@ -11,77 +11,80 @@
     localStorage.setItem(visitorIdKey, visitorId);
   }
 
-  const style = document.createElement('style');
-  style.textContent = `
-    .raspi-chat-button,.raspi-chat-panel,.raspi-chat-panel *{box-sizing:border-box}
-    .raspi-chat-button{position:fixed!important;right:18px!important;bottom:18px!important;z-index:2147483000!important;border:0!important;border-radius:999px!important;background:#172033!important;color:#fff!important;padding:13px 17px!important;font:700 14px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;box-shadow:0 14px 35px rgba(0,0,0,.18)!important;cursor:pointer!important;margin:0!important}
-    .raspi-chat-panel{position:fixed!important;right:18px!important;bottom:72px!important;z-index:2147483000!important;width:360px!important;max-width:calc(100vw - 32px)!important;height:min(460px,calc(100dvh - 96px))!important;display:none!important;flex-direction:column!important;border-radius:22px!important;overflow:hidden!important;background:#fff!important;box-shadow:0 22px 70px rgba(0,0,0,.22)!important;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;margin:0!important;padding:0!important;border:0!important}
-    .raspi-chat-panel.open{display:flex!important}
-    .raspi-chat-header{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:12px!important;height:58px!important;min-height:58px!important;max-height:58px!important;padding:11px 14px 11px 16px!important;background:#172033!important;color:#fff!important;font-weight:800!important;line-height:1.2!important;flex:0 0 58px!important;margin:0!important;border:0!important}
-    .raspi-chat-title{display:flex!important;flex-direction:column!important;gap:2px!important;min-width:0!important;margin:0!important;padding:0!important}
-    .raspi-chat-title strong{display:block!important;font-size:14px!important;line-height:17px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;margin:0!important;color:#fff!important}
-    .raspi-chat-title span{display:block!important;font-size:11px!important;line-height:14px!important;font-weight:600!important;color:rgba(255,255,255,.68)!important;margin:0!important}
-    .raspi-chat-close{width:34px!important;height:34px!important;display:grid!important;place-items:center!important;border:0!important;border-radius:12px!important;background:rgba(255,255,255,.1)!important;color:#fff!important;font:800 22px/1 system-ui!important;cursor:pointer!important;flex:0 0 auto!important;margin:0!important;padding:0!important}
-    .raspi-chat-close:hover{background:rgba(255,255,255,.16)!important}
-    .raspi-chat-messages{flex:1 1 auto!important;height:0!important;min-height:0!important;padding:14px!important;overflow:auto!important;background:#f4f6fb!important;color:#172033!important;font-size:14px!important;overscroll-behavior:contain!important;margin:0!important;border:0!important}
-    .raspi-chat-message{margin:0 0 10px!important;padding:10px 12px!important;border-radius:14px!important;background:#fff!important;color:#172033!important;line-height:1.45!important;word-wrap:break-word!important;white-space:pre-wrap!important;max-width:100%!important;border:0!important}
-    .raspi-chat-message.operator{background:#dfe8ff!important;margin-left:18px!important}
-    .raspi-chat-message.visitor{background:#fff!important;margin-right:18px!important}
-    .raspi-chat-system{opacity:.7!important;font-size:12px!important;line-height:1.35!important;padding:4px 2px!important;color:#172033!important;margin:0!important;background:transparent!important}
-    .raspi-chat-form{display:flex!important;align-items:stretch!important;gap:8px!important;height:62px!important;min-height:62px!important;max-height:62px!important;padding:10px!important;border-top:1px solid #e7ebf3!important;background:#fff!important;flex:0 0 62px!important;margin:0!important}
-    .raspi-chat-input{flex:1 1 auto!important;min-width:0!important;height:42px!important;border:1px solid #d7deea!important;border-radius:12px!important;padding:0 10px!important;font:14px/42px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;outline:none!important;background:#fff!important;color:#172033!important;margin:0!important;box-shadow:none!important}
-    .raspi-chat-input:focus{border-color:#4f6bff!important;box-shadow:0 0 0 3px rgba(79,107,255,.12)!important}
-    .raspi-chat-send{border:0!important;border-radius:12px!important;background:#4f6bff!important;color:#fff!important;width:44px!important;min-width:44px!important;height:42px!important;padding:0!important;font:800 18px/42px system-ui!important;cursor:pointer!important;margin:0!important;display:grid!important;place-items:center!important}
-    @media (max-width: 560px){
-      .raspi-chat-button{right:14px!important;bottom:14px!important;padding:13px 16px!important}
-      .raspi-chat-panel{right:10px!important;left:10px!important;bottom:74px!important;width:auto!important;max-width:none!important;height:min(430px,calc(100dvh - 92px))!important;border-radius:20px!important}
-      .raspi-chat-header{height:56px!important;min-height:56px!important;max-height:56px!important;flex-basis:56px!important;padding:10px 12px 10px 14px!important}
-      .raspi-chat-close{width:38px!important;height:38px!important;border-radius:13px!important}
-      .raspi-chat-messages{height:0!important;min-height:0!important;padding:12px!important;font-size:13px!important;max-height:none!important}
-      .raspi-chat-message.operator{margin-left:10px!important}
-      .raspi-chat-message.visitor{margin-right:10px!important}
-      .raspi-chat-form{height:60px!important;min-height:60px!important;max-height:60px!important;flex-basis:60px!important;padding:9px!important}
-      .raspi-chat-input{height:42px!important;line-height:42px!important}
-      .raspi-chat-send{height:42px!important;line-height:42px!important}
-    }
-    @media (max-height: 560px){
-      .raspi-chat-panel{top:10px!important;bottom:10px!important;height:auto!important;max-height:none!important}
-      .raspi-chat-messages{height:0!important;min-height:0!important;max-height:none!important}
-    }
-  `;
-  document.head.appendChild(style);
+  const host = document.createElement('div');
+  host.id = `wschat-host-${siteId}`;
+  host.style.all = 'initial';
+  document.body.appendChild(host);
 
-  const button = document.createElement('button');
-  button.className = 'raspi-chat-button';
-  button.type = 'button';
-  button.textContent = '💬 Чат';
+  const root = host.attachShadow({ mode: 'open' });
 
-  const panel = document.createElement('section');
-  panel.className = 'raspi-chat-panel';
-  panel.setAttribute('aria-label', 'Чат поддержки');
-  panel.innerHTML = `
-    <div class="raspi-chat-header">
-      <div class="raspi-chat-title">
-        <strong>StackWorks Support</strong>
-        <span>Обычно отвечаем быстро</span>
+  root.innerHTML = `
+    <style>
+      :host{all:initial;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+      *{box-sizing:border-box}
+      .chat-button{position:fixed;right:18px;bottom:18px;z-index:2147483000;border:0;border-radius:999px;background:#172033;color:#fff;padding:13px 17px;font:700 14px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;box-shadow:0 14px 35px rgba(0,0,0,.18);cursor:pointer;margin:0}
+      .chat-panel{position:fixed;right:18px;bottom:72px;z-index:2147483000;width:360px;max-width:calc(100vw - 32px);height:min(460px,calc(100dvh - 96px));display:none;flex-direction:column;border-radius:22px;overflow:hidden;background:#fff;box-shadow:0 22px 70px rgba(0,0,0,.22);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;margin:0;padding:0;border:0}
+      .chat-panel.open{display:flex}
+      .chat-header{display:flex;align-items:center;justify-content:space-between;gap:12px;height:58px;min-height:58px;max-height:58px;padding:11px 14px 11px 16px;background:#172033;color:#fff;font-weight:800;line-height:1.2;flex:0 0 58px;margin:0;border:0}
+      .chat-title{display:flex;flex-direction:column;gap:2px;min-width:0;margin:0;padding:0}
+      .chat-title strong{display:block;font-size:14px;line-height:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin:0;color:#fff}
+      .chat-title span{display:block;font-size:11px;line-height:14px;font-weight:600;color:rgba(255,255,255,.68);margin:0}
+      .chat-close{width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:12px;background:rgba(255,255,255,.1);color:#fff;font:800 22px/1 system-ui;cursor:pointer;flex:0 0 auto;margin:0;padding:0}
+      .chat-close:hover{background:rgba(255,255,255,.16)}
+      .chat-messages{flex:1 1 auto;height:0;min-height:0;padding:14px;overflow:auto;background:#f4f6fb;color:#172033;font-size:14px;overscroll-behavior:contain;margin:0;border:0}
+      .chat-message{margin:0 0 10px;padding:10px 12px;border-radius:14px;background:#fff;color:#172033;line-height:1.45;word-wrap:break-word;white-space:pre-wrap;max-width:100%;border:0;font-size:14px}
+      .chat-message.operator{background:#dfe8ff;margin-left:18px}
+      .chat-message.visitor{background:#fff;margin-right:18px}
+      .chat-system{opacity:.7;font-size:12px;line-height:1.35;padding:4px 2px;color:#172033;margin:0;background:transparent}
+      .chat-form{display:flex;align-items:stretch;gap:8px;height:62px;min-height:62px;max-height:62px;padding:10px;border-top:1px solid #e7ebf3;background:#fff;flex:0 0 62px;margin:0}
+      .chat-input{flex:1 1 auto;min-width:0;height:42px;border:1px solid #d7deea;border-radius:12px;padding:0 10px;font:14px/42px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;outline:none;background:#fff;color:#172033;margin:0;box-shadow:none}
+      .chat-input:focus{border-color:#4f6bff;box-shadow:0 0 0 3px rgba(79,107,255,.12)}
+      .chat-send{border:0;border-radius:12px;background:#4f6bff;color:#fff;width:44px;min-width:44px;height:42px;padding:0;font:800 18px/42px system-ui;cursor:pointer;margin:0;display:grid;place-items:center}
+      @media (max-width:560px){
+        .chat-button{right:14px;bottom:14px;padding:13px 16px}
+        .chat-panel{right:10px;left:10px;bottom:74px;width:auto;max-width:none;height:min(430px,calc(100dvh - 92px));border-radius:20px}
+        .chat-header{height:56px;min-height:56px;max-height:56px;flex-basis:56px;padding:10px 12px 10px 14px}
+        .chat-close{width:38px;height:38px;border-radius:13px}
+        .chat-messages{height:0;min-height:0;padding:12px;font-size:13px;max-height:none}
+        .chat-message{font-size:13px}
+        .chat-message.operator{margin-left:10px}
+        .chat-message.visitor{margin-right:10px}
+        .chat-form{height:60px;min-height:60px;max-height:60px;flex-basis:60px;padding:9px}
+        .chat-input{height:42px;line-height:42px}
+        .chat-send{height:42px;line-height:42px}
+      }
+      @media (max-height:560px){
+        .chat-panel{top:10px;bottom:10px;height:auto;max-height:none}
+        .chat-messages{height:0;min-height:0;max-height:none}
+      }
+    </style>
+
+    <button class="chat-button" type="button">💬 Чат</button>
+
+    <section class="chat-panel" aria-label="Чат поддержки">
+      <div class="chat-header">
+        <div class="chat-title">
+          <strong>StackWorks Support</strong>
+          <span>Обычно отвечаем быстро</span>
+        </div>
+        <button class="chat-close" type="button" data-role="close" aria-label="Закрыть чат">×</button>
       </div>
-      <button class="raspi-chat-close" type="button" data-role="close" aria-label="Закрыть чат">×</button>
-    </div>
-    <div class="raspi-chat-messages" data-role="messages">
-      <div class="raspi-chat-message operator">Здравствуйте! Чем можем помочь?</div>
-    </div>
-    <form class="raspi-chat-form" data-role="form">
-      <input class="raspi-chat-input" data-role="input" placeholder="Ваше сообщение" autocomplete="off" />
-      <button class="raspi-chat-send" type="submit" aria-label="Отправить">➤</button>
-    </form>
+      <div class="chat-messages" data-role="messages">
+        <div class="chat-message operator">Здравствуйте! Чем можем помочь?</div>
+      </div>
+      <form class="chat-form" data-role="form">
+        <input class="chat-input" data-role="input" placeholder="Ваше сообщение" autocomplete="off" />
+        <button class="chat-send" type="submit" aria-label="Отправить">➤</button>
+      </form>
+    </section>
   `;
 
-  document.body.append(button, panel);
-
-  const messages = panel.querySelector('[data-role="messages"]');
-  const form = panel.querySelector('[data-role="form"]');
-  const input = panel.querySelector('[data-role="input"]');
-  const closeButton = panel.querySelector('[data-role="close"]');
+  const button = root.querySelector('.chat-button');
+  const panel = root.querySelector('.chat-panel');
+  const messages = root.querySelector('[data-role="messages"]');
+  const form = root.querySelector('[data-role="form"]');
+  const input = root.querySelector('[data-role="input"]');
+  const closeButton = root.querySelector('[data-role="close"]');
 
   let socket = null;
   let reconnectTimer = null;
@@ -108,7 +111,7 @@
 
   function addMessage(text, type = 'visitor') {
     const item = document.createElement('div');
-    item.className = `raspi-chat-message ${type}`;
+    item.className = `chat-message ${type}`;
     item.textContent = text;
     messages.appendChild(item);
     messages.scrollTop = messages.scrollHeight;
@@ -116,7 +119,7 @@
 
   function addSystem(text) {
     const item = document.createElement('div');
-    item.className = 'raspi-chat-system';
+    item.className = 'chat-system';
     item.textContent = text;
     messages.appendChild(item);
     messages.scrollTop = messages.scrollHeight;
