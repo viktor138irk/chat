@@ -2,12 +2,13 @@
 set -euo pipefail
 
 NODE_MAJOR="${NODE_MAJOR:-20}"
-PROJECT_ROOT="${PROJECT_ROOT:-/opt/raspi-chat}"
-SOURCE_PATH="${SOURCE_PATH:-/opt/raspi-chat/source}"
-DATA_PATH="${DATA_PATH:-/opt/raspi-chat/data}"
-LOGS_PATH="${LOGS_PATH:-/opt/raspi-chat/logs}"
-BACKUPS_PATH="${BACKUPS_PATH:-/opt/raspi-chat/backups}"
-PM2_PROCESS_NAME="${PM2_PROCESS_NAME:-raspi-chat-backend}"
+PROJECT_ROOT="${PROJECT_ROOT:-/opt/vps-chat}"
+SOURCE_PATH="${SOURCE_PATH:-/opt/vps-chat/source}"
+DATA_PATH="${DATA_PATH:-/opt/vps-chat/data}"
+LOGS_PATH="${LOGS_PATH:-/opt/vps-chat/logs}"
+BACKUPS_PATH="${BACKUPS_PATH:-/opt/vps-chat/backups}"
+UPDATES_PATH="${UPDATES_PATH:-/opt/vps-chat/updates}"
+PM2_PROCESS_NAME="${PM2_PROCESS_NAME:-vps-chat-backend}"
 
 log() {
   printf '\n[vps-bootstrap] %s\n' "$1"
@@ -42,7 +43,7 @@ else
 fi
 
 log "Creating project directories"
-mkdir -p "$PROJECT_ROOT" "$DATA_PATH" "$LOGS_PATH" "$BACKUPS_PATH"
+mkdir -p "$PROJECT_ROOT" "$DATA_PATH" "$LOGS_PATH" "$BACKUPS_PATH" "$UPDATES_PATH"
 
 if [[ ! -d "$SOURCE_PATH/.git" ]]; then
   log "Source path is not initialized: $SOURCE_PATH"
