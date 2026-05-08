@@ -8,9 +8,11 @@ import {
   getOrCreateOpenConversation,
   getSiteByWidgetKey,
   getStats,
+  getTelegramSettings,
   listRecentMessages,
   migrate,
-  touchVisitor
+  touchVisitor,
+  updateTelegramSettings
 } from './db.js';
 
 migrate();
@@ -62,6 +64,28 @@ app.get('/api/admin/messages', async (request) => {
     ok: true,
     messages: listRecentMessages(limit)
   };
+});
+
+app.get('/api/admin/telegram/settings', async () => ({
+  ok: true,
+  settings: getTelegramSettings()
+}));
+
+app.post('/api/admin/telegram/settings', async (request, reply) => {
+  try {
+    const settings = updateTelegramSettings(request.body || {});
+
+    return {
+      ok: true,
+      settings
+    };
+  } catch (error) {
+    reply.code(400);
+    return {
+      ok: false,
+      error: error.message
+    };
+  }
 });
 
 app.post('/api/widget/message', async (request) => {
