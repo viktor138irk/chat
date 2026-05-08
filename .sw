@@ -2,153 +2,53 @@
 
 Project: WSChat
 Repository: https://github.com/viktor138irk/chat
-Owner: viktor138irk
 Default branch: main
 
-This file is the main project memory for continuing development in a new chat/dialog. Always open this file first before continuing work.
+## Mandatory rule
 
-## Mandatory working rule
+Always update this `.sw` file after meaningful code, deployment, architecture, or debugging changes.
 
-After every meaningful code, deployment, architecture, or debugging change, update this `.sw` file in the repository.
+Never store secrets in this file: no Telegram tokens, proxy passwords, API keys, SSH credentials, or similar values. Use `[REDACTED]`.
 
-The user explicitly requested: keep writing/updating `.sw` constantly during further development.
+## Product
 
-Do not rely on chat history only. `.sw` must remain the source of truth for project state, current bugs, fixes, deployment commands, and next steps.
+Self-hosted live chat similar to Jivo. Website widget sends visitor messages to Telegram operators. Operators reply in Telegram, and replies will later return to the website widget.
 
-## Product idea
-
-Build a self-hosted live chat system similar to Jivo, but with Telegram as the operator interface.
-
-Website visitors use an embeddable widget. Messages go to selected Telegram operators. Operators reply in Telegram, and replies return to the website widget.
-
-Future direction: Android app support should be planned in the API, but MVP is VPS + website widget + Telegram operators.
-
-## Current production/test deployment
-
-Current tested domains:
+## Deployment
 
 ```text
-https://widget.stackworks.ru/        -> widget static site
-https://widget.stackworks.ru/admin/  -> admin panel
-https://api.stackworks.ru/health     -> backend API through FastPanel reverse proxy
+widget/admin: https://widget.stackworks.ru/
+admin panel:  https://widget.stackworks.ru/admin/
+backend API:  https://api.stackworks.ru/health
+backend local: http://127.0.0.1:3000
+PM2 process:  wschat-backend
+source:       /opt/ws-chat/source
+data:         /opt/ws-chat/data
+SQLite:       /opt/ws-chat/data/chat.sqlite
+webroot:      /var/www/widget_stack_usr/data/www/widget.stackworks.ru
 ```
 
-Current VPS paths:
+MVP architecture is VPS-only. Raspberry Pi was removed from MVP because of Node.js/OS/DPKG instability.
 
-```text
-/opt/ws-chat/source
-/opt/ws-chat/data
-/opt/ws-chat/logs
-/opt/ws-chat/backups
-/opt/ws-chat/updates
-```
+## Database and settings
 
-Current PM2 process:
-
-```text
-wschat-backend
-```
-
-Backend listens locally only:
-
-```text
-http://127.0.0.1:3000
-```
-
-FastPanel reverse proxy:
-
-```text
-api.stackworks.ru -> http://127.0.0.1:3000
-```
-
-Widget/admin webroot:
-
-```text
-/var/www/widget_stack_usr/data/www/widget.stackworks.ru
-```
-
-Admin panel lives under:
-
-```text
-/var/www/widget_stack_usr/data/www/widget.stackworks.ru/admin/
-```
-
-## Architecture decision
-
-MVP is VPS-only.
-
-Raspberry Pi 3B was removed from MVP because of Node.js/OS/DPKG problems:
-
-- 32-bit OS: NodeSource armhf incompatibility and segfaults.
-- 64-bit OS: NodeSource arm64 produced `Illegal instruction`.
-- APT/DPKG corruption was observed.
-
-Current architecture:
-
-```text
-Website with embed widget
-  -> widget.stackworks.ru static widget/admin
-  -> api.stackworks.ru HTTPS reverse proxy
-  -> Node.js Fastify backend on 127.0.0.1:3000
-  -> SQLite at /opt/ws-chat/data/chat.sqlite
-  -> Telegram bridge via Telegraf
-  -> optional SOCKS5 proxy for Telegram
-  -> Telegram operators
-```
-
-## Current backend env requirements
-
-```env
-APP_ENV=production
-APP_HOST=127.0.0.1
-APP_PORT=3000
-PUBLIC_API_URL=https://api.stackworks.ru
-PUBLIC_WS_URL=wss://api.stackworks.ru/ws
-TRUST_PROXY=true
-DATABASE_PATH=/opt/ws-chat/data/chat.sqlite
-ADMIN_ORIGIN=https://widget.stackworks.ru
-WIDGET_ORIGIN=https://widget.stackworks.ru
-ADMIN_BASE_PATH=/admin
-
-TELEGRAM_BOT_TOKEN=
-TELEGRAM_PROXY_ENABLED=false
-TELEGRAM_PROXY_TYPE=socks5
-TELEGRAM_PROXY_HOST=127.0.0.1
-TELEGRAM_PROXY_PORT=9050
-TELEGRAM_PROXY_USERNAME=
-TELEGRAM_PROXY_PASSWORD=
-```
-
-Important: Telegram settings are now also persisted in SQLite `settings` table and managed from admin panel.
-
-## Database
-
-SQLite DB path:
+Correct DB path:
 
 ```text
 /opt/ws-chat/data/chat.sqlite
 ```
 
-Tables currently managed by `backend/src/db.js`:
+Production fallback DB path was fixed to the same value even if `.env` is not loaded.
+
+`/health` now includes `dbPath`; it must show:
 
 ```text
-sites
-operators
-site_operators
-visitors
-conversations
-messages
-settings
+/opt/ws-chat/data/chat.sqlite
 ```
 
-Default site:
+Settings come from SQLite table `settings`, not from frontend.
 
-```text
-site id: site_default
-widget_key: site_default
-```
-
-Important Telegram settings keys:
+Important keys:
 
 ```text
 telegram.bot_token
@@ -160,19 +60,17 @@ telegram.proxy.username
 telegram.proxy.password
 ```
 
-Check saved proxy settings on VPS:
+Diagnostics:
 
 ```bash
 sqlite3 /opt/ws-chat/data/chat.sqlite "select key, value from settings where key like 'telegram.proxy.%';"
-```
-
-Check token length without exposing token:
-
-```bash
 sqlite3 /opt/ws-chat/data/chat.sqlite "select key, length(value) as len from settings where key='telegram.bot_token';"
+find /opt/ws-chat/source -name "chat.sqlite"
 ```
 
-## Current backend endpoints
+If a DB exists inside `/opt/ws-chat/source/backend/data/`, that was a wrong fallback DB from older code.
+
+## Current endpoints
 
 ```text
 GET  /health
@@ -187,53 +85,35 @@ POST /api/widget/message
 GET  /ws
 ```
 
-`/health` now should include Telegram bridge state:
-
-```json
-{
-  "ok": true,
-  "service": "wschat-backend",
-  "env": "production",
-  "telegram": {
-    "enabled": true,
-    "running": true,
-    "error": "",
-    "username": "...",
-    "proxyEnabled": true,
-    "startedAt": "...",
-    "hasBot": true
-  }
-}
-```
-
-## Admin panel current state
-
-Admin is a React/Vite panel at:
+Expected `/health` includes:
 
 ```text
-https://widget.stackworks.ru/admin/
+ok=true
+service=wschat-backend
+env=production
+dbPath=/opt/ws-chat/data/chat.sqlite
+telegram.enabled=true
+telegram.running=true
+telegram.error=
+telegram.proxyEnabled=true
+telegram.hasBot=true
 ```
+
+## Admin panel
 
 Implemented:
 
-- dark compact dashboard UI;
-- API health indicator;
-- stats cards;
-- recent messages list from SQLite;
-- auto-refresh of dashboard data;
+- dashboard stats/messages;
 - Telegram/SOCKS5 settings form;
-- dirty-state protection so auto-refresh no longer wipes input while typing;
-- token/password masks `********`;
-- SOCKS5 enable/host/port/login/password fields;
-- save settings button;
-- test proxy button;
-- reset form button.
+- dirty-state protection so refresh does not wipe settings while typing;
+- token/password masks;
+- save/test/reset actions.
 
-Important fix: dashboard auto-refresh must not reload Telegram/SOCKS5 form while the user is editing it.
+Important: admin loads Telegram settings from `GET /api/admin/telegram/settings`, which reads SQLite.
 
-## Telegram bridge current state
+## Telegram bridge
 
-Runtime bridge file:
+Runtime file:
 
 ```text
 backend/src/telegram.js
@@ -247,87 +127,67 @@ socks-proxy-agent
 node-fetch
 ```
 
-Current behavior:
+Implemented:
 
-- backend starts Telegram bridge on startup using settings from SQLite;
-- `/start` registers Telegram user as active operator;
-- new operator is linked to `site_default` through `site_operators`;
-- `/status` replies with bridge status;
-- text reply in Telegram can be saved as operator message if it is a reply to WSChat notification containing `Conversation: conv_...`;
-- website visitor message is saved to SQLite and then sent to active Telegram operators;
-- operator reply is saved to SQLite, but delivery back to widget via WebSocket is not finished yet.
+- bridge startup from SQLite settings;
+- SOCKS5 proxy support;
+- `/start` registers operator;
+- `/status` replies with bridge state;
+- visitor messages go to active Telegram operators;
+- Telegram reply can be saved as operator message when replying to WSChat notification.
 
-Important: bridge originally used `socks5://`, but successful curl test showed Telegram must be accessed via `socks5h://` so DNS resolves through proxy.
+Not finished yet:
 
-Current fix:
+- delivery of Telegram replies back to widget via WebSocket.
 
-```text
-backend/src/telegram.js uses socks5h:// for SocksProxyAgent
-```
-
-Commit for this fix:
+Important proxy fix:
 
 ```text
-4b46aabc8210158f97c3c6e9274b8f703f7a8aa2
+Telegram bridge must use socks5h:// so DNS resolution goes through proxy.
 ```
 
-## Telegram/SOCKS5 debugging history
+## Current debugging status
 
-Observed `/health` error before socks5h fix:
+Current observed Telegram error:
 
 ```text
-request to https://api.telegram.org/bot.../getMe failed, reason: Proxy connection timed out
+409 Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
 ```
 
-User confirmed SOCKS5 itself works from VPS with curl:
+Meaning: Telegram token/proxy are usable, but two polling instances are running for the same bot token.
+
+Most likely cause: a manual `node src/server.js` process was started during debugging and is still alive while PM2 also runs `wschat-backend`.
+
+Fix on VPS:
 
 ```bash
-curl -v --proxy 'socks5h://proxy:Adelina%402015@194.156.65.175:42673' https://api.telegram.org
+pkill -f "/opt/ws-chat/source/backend/src/server.js" || true
+pkill -f "node src/server.js" || true
+pm2 delete wschat-backend || true
+cd /opt/ws-chat/source/backend
+pm2 start src/server.js --name wschat-backend --update-env
+pm2 save
+sleep 5
+curl -s http://127.0.0.1:3000/health | jq
 ```
 
-Result showed:
+If 409 persists:
+
+```bash
+ps aux | grep -E "node|server.js|wschat" | grep -v grep
+```
+
+Only one polling instance may run per Telegram bot token.
+
+## Important recent commits
 
 ```text
-SOCKS5 request granted
-HTTP/2 302
+4b46aabc8210158f97c3c6e9274b8f703f7a8aa2 - Telegram proxy changed to socks5h
+6f14353cd403f351c89e4274d189808951dcf940 - production DB fallback fixed
+be004fd14ab16e3b1262980fe044356d2efbe806 - health endpoint includes dbPath
 ```
 
-This proves proxy works and Telegram is reachable through it.
-
-Important note: the SOCKS5 password contains `@`. In curl URL it must be encoded as `%40`, but in admin panel it should be entered normally as `Adelina@2015`. Code uses `encodeURIComponent`, so the app should encode it correctly.
-
-Current proxy values used in testing:
-
-```text
-Host: 194.156.65.175
-Port: 42673
-Login: proxy
-Password: Adelina@2015
-SOCKS5 enabled: true
-```
-
-Do not expose Telegram bot token in chat or logs.
-
-## Important commits after original snapshot
-
-- `eae37d38a98026c39e4cd71e0f54f94d4785d9e9` — admin dashboard shows stats/messages.
-- `b9b68d401ce0a6661f169064a1fee4e5ca441f19` — updated admin styling.
-- `d601e6925718e5d8c59394682da05ff25e4581a0` — DB functions for Telegram/SOCKS5 settings.
-- `966c3cf531c61d13c300bb584b3cb50453c56a7c` — backend API for Telegram/SOCKS5 settings.
-- `c1169032ee0809fcc0f52f8e7d1b8cdfd4c1f375` — proxy config validation endpoint.
-- `1c644e1df7ebd5fb88e92fb3f6360f86355aac04` — Telegram/SOCKS5 form in admin.
-- `53fad336d3013b9f1fc1e25fdac4149956dc356b` — styles for Telegram/SOCKS5 form.
-- `9999139ab5c1cf227187d6b596caea8e2c0e7f32` — fixed auto-refresh wiping SOCKS5 form.
-- `760e85e342fd1c08e9a80de6eb6429fca17ec3ac` — added backend dependencies for Telegram/SOCKS5 bridge.
-- `5c6da6582e9d7077c4d7fe504b9731f853058072` — operators and operator messages DB functions.
-- `72edf824e0d7ebf92dfc27dfc8a956d2d927448c` — added runtime Telegram bridge file.
-- `47096dd0de601448a2c7f9ba1d5ac724f3bd7b69` — connected Telegram bridge to backend runtime.
-- `b22381061236a3a9568a5a906375f73dcbe16f87` — restartable Telegram bridge.
-- `27e94c96533b2955325d1d7e407f53d98bd0e81b` — restart endpoint and attempted auto-restart after settings save.
-- `8632c577a8b798bd7c5480998156919988affccb` — separated settings save from bridge restart to avoid timeout wiping UI state.
-- `4b46aabc8210158f97c3c6e9274b8f703f7a8aa2` — changed Telegram SOCKS agent to `socks5h://`.
-
-## Deployment/update commands
+## Deployment commands
 
 Backend update:
 
@@ -339,21 +199,19 @@ npm install
 pm2 restart wschat-backend --update-env
 ```
 
-Hard reset if server is behind or files are missing:
+Hard restart as single PM2 process:
 
 ```bash
-cd /opt/ws-chat/source
-git fetch origin main
-git reset --hard origin/main
-git clean -fd
-cd backend
+pkill -f "/opt/ws-chat/source/backend/src/server.js" || true
+pkill -f "node src/server.js" || true
+pm2 delete wschat-backend || true
+cd /opt/ws-chat/source/backend
 npm install
-pm2 delete wschat-backend
 pm2 start src/server.js --name wschat-backend --update-env
 pm2 save
 ```
 
-Admin/widget build and publish:
+Frontend build/publish:
 
 ```bash
 cd /opt/ws-chat/source
@@ -363,68 +221,26 @@ rsync -av --delete widget/dist/ /var/www/widget_stack_usr/data/www/widget.stackw
 rsync -av --delete admin-panel/dist/ /var/www/widget_stack_usr/data/www/widget.stackworks.ru/admin/
 ```
 
-Health check:
+Health/logs:
 
 ```bash
 curl -s http://127.0.0.1:3000/health | jq
-```
-
-Logs:
-
-```bash
 pm2 logs wschat-backend --lines 100
 ```
 
 ## FastPanel safety rules
 
-Never from project scripts:
-
-- edit `/etc/nginx/nginx.conf`;
-- overwrite FastPanel vhost configs;
-- run broad `systemctl restart nginx`;
-- install packages that replace FastPanel web stack;
-- bind project services directly to ports 80/443;
-- delete parent `/var/www` directories;
-- run `rsync --delete` against `/var/www` or parent directories.
-
-Only copy static files into exact domain webroot directories.
+Never edit global FastPanel/nginx configs from project scripts. Never bind project services directly to ports 80/443. Never run `rsync --delete` against `/var/www` or parent directories. Copy static files only into exact domain webroots.
 
 ## Current next steps
 
-1. Pull latest code with `socks5h://` fix on VPS.
-2. Restart backend with PM2.
-3. Check `/health` and confirm `telegram.running: true`.
-4. In Telegram, send `/start` to the bot and confirm operator registration.
-5. Send a message from widget and confirm it arrives to Telegram operator.
-6. Implement delivery of Telegram operator replies back to widget through WebSocket.
-7. Add admin UI bridge status/restart button.
-8. Add admin list of Telegram operators.
+1. Kill duplicate Telegram polling process.
+2. Start exactly one PM2 process `wschat-backend`.
+3. Confirm `/health`: correct `dbPath` and `telegram.running=true`.
+4. Send `/start` to the Telegram bot.
+5. Send widget message and confirm it reaches Telegram.
+6. Implement Telegram reply delivery back to widget via WebSocket.
+7. Add admin bridge status/restart button.
+8. Add admin operator list.
 9. Add admin auth.
-10. Add site CRUD and operator-site permissions.
-11. Fix production widget build to emit stable `widget.js`.
-12. Add origin/domain validation: `site_id + Origin` must match configured site.
-13. Add updater bundle workflow.
-14. Continue updating this `.sw` after each meaningful change.
-
-## User preferences and constraints
-
-- User wants practical development, not only planning.
-- User wants all work in GitHub repository `viktor138irk/chat`.
-- User wants to resume development in new dialogs using this `.sw` file.
-- User explicitly wants `.sw` continuously updated.
-- User prefers not to risk breaking FastPanel.
-- User wants manual control over domains in FastPanel.
-- User wants future auto-update file/bundle workflow.
-- User changed architecture to VPS-only after Raspberry issues.
-- VPS currently uses root user by default, so MVP installation can run as root.
-- Widget and admin must live in one FastPanel site: widget at `/`, admin at `/admin/`.
-
-## How to continue in a new chat
-
-Open `.sw` first, then continue from `Current next steps`.
-
-Recommended immediate task:
-
-```text
-Pull latest code on VPS, restart backend, verify Telegram bridge with socks5h proxy, then test /start.
-```
+10. Fix production widget build to emit stable `widget.js`.
