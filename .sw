@@ -45,11 +45,31 @@ Current local backend:
 http://127.0.0.1:3000
 ```
 
-Important current issue/fix:
+Current backend env requirements:
+
+```env
+APP_ENV=production
+APP_HOST=127.0.0.1
+APP_PORT=3000
+PUBLIC_API_URL=https://api.stackworks.ru
+PUBLIC_WS_URL=wss://api.stackworks.ru/ws
+TRUST_PROXY=true
+DATABASE_PATH=/opt/ws-chat/data/chat.sqlite
+ADMIN_ORIGIN=https://widget.stackworks.ru
+WIDGET_ORIGIN=https://widget.stackworks.ru
+ADMIN_BASE_PATH=/admin
+```
+
+Important fixes already made:
 
 - Admin panel previously displayed `API: http://localhost:3000` and `Failed to fetch` because browser localhost points to the user's PC, not VPS.
 - `admin-panel/src/main.jsx` fallback API URL was changed to `https://api.stackworks.ru` in commit `3e956e5c2ab65fe563f6c5d71bb2d032cbf8bcad`.
-- After pulling, rebuild admin and publish:
+- Backend did not reliably load `backend/.env`, so env stayed `development` and CORS did not include `access-control-allow-origin` for `https://widget.stackworks.ru`.
+- `backend/src/config.js` now loads `backend/.env` by absolute path in commit `4f6339b37c0bbdfa11c12cacb5d12265fb5dd59b`.
+- Admin HTML title was changed from `Raspi Chat Admin` to `WSChat Admin` in commit `e5cac5ef34287931f7661bc26dcf739cdf9e7f90`.
+- If Telegram bot token was ever pasted into chat/logs, it must be revoked/regenerated in BotFather before production use.
+
+After pulling, rebuild admin and publish:
 
 ```bash
 cd /opt/ws-chat/source
@@ -57,9 +77,27 @@ git pull --ff-only origin main
 npm install
 npm run build:admin
 rsync -av --delete admin-panel/dist/ /var/www/widget_stack_usr/data/www/widget.stackworks.ru/admin/
+pm2 restart wschat-backend --update-env
 ```
 
-If the admin still fails to fetch API, check backend CORS for `https://widget.stackworks.ru`.
+Verify CORS/backend:
+
+```bash
+curl http://127.0.0.1:3000/health
+curl -i https://api.stackworks.ru/health -H "Origin: https://widget.stackworks.ru"
+```
+
+Expected health:
+
+```json
+{"ok":true,"service":"wschat-backend","env":"production"}
+```
+
+Expected CORS header:
+
+```text
+access-control-allow-origin: https://widget.stackworks.ru
+```
 
 ## Current architecture
 
@@ -453,6 +491,8 @@ This fixed the white page caused by assets loading from `/assets/...` instead of
 
 Admin API fallback was fixed from `http://localhost:3000` to `https://api.stackworks.ru` in commit `3e956e5c2ab65fe563f6c5d71bb2d032cbf8bcad`.
 
+Admin HTML title was changed from `Raspi Chat Admin` to `WSChat Admin` in commit `e5cac5ef34287931f7661bc26dcf739cdf9e7f90`.
+
 ### Widget
 
 Vanilla JS widget shell exists.
@@ -529,13 +569,15 @@ FASTPANEL_SAFE_MODE=true
 - Raspberry armhf bootstrap fix: `fbe84c8b16a51cdd4931ecf0b1e0fa8654edec6a`
 - Architecture switched to VPS-only after Raspberry issues: `28b0ca37c4032633811cce4dc096d1c714c5d5a2`
 - Backend health renamed to WSChat: `ac14400b2eec875231f6300b7a48e8940cf73996`
+- Backend .env absolute loading fix: `4f6339b37c0bbdfa11c12cacb5d12265fb5dd59b`
 - Admin Vite base `/admin/` added: `9943376645882eeb3cdc372b5292c72519e005b2`
 - Admin API fallback fixed: `3e956e5c2ab65fe563f6c5d71bb2d032cbf8bcad`
+- Admin HTML title renamed to WSChat: `e5cac5ef34287931f7661bc26dcf739cdf9e7f90`
 
 ## Next development steps
 
-1. Pull latest changes on VPS and rebuild/publish admin so it uses `https://api.stackworks.ru`.
-2. Verify admin panel API card shows `ok: true`.
+1. Pull latest changes on VPS and rebuild/publish admin so title says `WSChat Admin`.
+2. Verify admin panel API card shows `ok: true` and `env: production`.
 3. Finish updating docs to WSChat/VPS-only same-domain widget/admin architecture.
 4. Update deploy-agent for widget/admin same webroot and backend restart.
 5. Fix widget production build so it outputs stable `widget.js`.
