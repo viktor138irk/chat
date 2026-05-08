@@ -16,6 +16,21 @@ VPS with FastPanel
   └── Telegram bot       -> backend process
 ```
 
+## User model
+
+The MVP installation may be performed as `root` because the VPS currently has only the root user by default.
+
+In this mode:
+
+```text
+/opt/ws-chat is owned by root
+PM2 runs as root
+backend still listens only on 127.0.0.1:3000
+FastPanel webroots are managed manually
+```
+
+This is acceptable for the MVP as long as port `3000` is not exposed publicly.
+
 ## FastPanel rule
 
 Create domains/sites manually in FastPanel. The project must not create sites, overwrite FastPanel configs, or restart the whole web stack.
@@ -60,12 +75,12 @@ FastPanel webroots remain separate:
 
 Do not publish files into `api.example.ru`. It is proxy-only.
 
-## Install packages on VPS
+## Install packages on VPS as root
 
 ```bash
-sudo apt update
-sudo apt upgrade -y
-sudo apt install -y git curl rsync sqlite3 ca-certificates gnupg build-essential python3 make g++
+apt update
+apt upgrade -y
+apt install -y git curl rsync sqlite3 ca-certificates gnupg build-essential python3 make g++
 ```
 
 ## Install Node.js
@@ -73,8 +88,8 @@ sudo apt install -y git curl rsync sqlite3 ca-certificates gnupg build-essential
 Recommended for Ubuntu 24.04 VPS:
 
 ```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
-sudo apt install -y nodejs
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt install -y nodejs
 node -v
 npm -v
 ```
@@ -82,15 +97,14 @@ npm -v
 ## Install PM2
 
 ```bash
-sudo npm install -g pm2
+npm install -g pm2
 pm2 -v
 ```
 
 ## Clone project
 
 ```bash
-sudo mkdir -p /opt/ws-chat
-sudo chown -R $USER:$USER /opt/ws-chat
+mkdir -p /opt/ws-chat
 cd /opt/ws-chat
 git clone https://github.com/viktor138irk/chat.git source
 cd source
@@ -146,15 +160,15 @@ Expected:
 {"ok":true,"service":"raspi-chat-backend","env":"production"}
 ```
 
-Production with PM2:
+Production with PM2 as root:
 
 ```bash
 pm2 start backend/src/server.js --name wschat-backend
 pm2 save
-pm2 startup
+pm2 startup systemd -u root --hp /root
 ```
 
-Run the command printed by `pm2 startup`.
+Run the command printed by `pm2 startup` if PM2 prints one.
 
 ## Configure api.example.ru proxy in FastPanel
 
@@ -192,13 +206,13 @@ location / {
 If editing any Nginx config manually, always run:
 
 ```bash
-sudo nginx -t
+nginx -t
 ```
 
 Reload only if needed:
 
 ```bash
-sudo systemctl reload nginx
+systemctl reload nginx
 ```
 
 ## Build admin and widget
