@@ -13,22 +13,70 @@ Build a self-hosted live chat system similar to Jivo, but with Telegram as the o
 
 Website visitors use an embeddable widget. Messages go to selected Telegram operators. Operators reply in Telegram, and replies return to the website widget.
 
+## Current production/test deployment
+
+Current tested domains:
+
+```text
+https://widget.stackworks.ru/        -> widget works
+https://widget.stackworks.ru/admin/  -> admin works after Vite base fix
+https://api.stackworks.ru/health     -> backend API works
+```
+
+Current VPS paths:
+
+```text
+/opt/ws-chat/source
+/opt/ws-chat/data
+/opt/ws-chat/logs
+/opt/ws-chat/backups
+/opt/ws-chat/updates
+```
+
+Current PM2 process:
+
+```text
+wschat-backend
+```
+
+Current local backend:
+
+```text
+http://127.0.0.1:3000
+```
+
+Important current issue/fix:
+
+- Admin panel previously displayed `API: http://localhost:3000` and `Failed to fetch` because browser localhost points to the user's PC, not VPS.
+- `admin-panel/src/main.jsx` fallback API URL was changed to `https://api.stackworks.ru` in commit `3e956e5c2ab65fe563f6c5d71bb2d032cbf8bcad`.
+- After pulling, rebuild admin and publish:
+
+```bash
+cd /opt/ws-chat/source
+git pull --ff-only origin main
+npm install
+npm run build:admin
+rsync -av --delete admin-panel/dist/ /var/www/widget_stack_usr/data/www/widget.stackworks.ru/admin/
+```
+
+If the admin still fails to fetch API, check backend CORS for `https://widget.stackworks.ru`.
+
 ## Current architecture
 
 The architecture is VPS-only.
 
 ```text
 Website with embedded widget
-  -> widget.example.ru static widget.js on VPS/FastPanel
-  -> api.example.ru public HTTPS endpoint on VPS/FastPanel
+  -> widget.stackworks.ru static widget and admin panel on VPS/FastPanel
+  -> api.stackworks.ru public HTTPS endpoint on VPS/FastPanel
   -> local reverse proxy to Node.js backend on VPS
   -> SQLite on VPS
   -> Telegram bot API / optional SOCKS5
   -> Telegram operators
 
 Admin user
-  -> admin.example.ru static admin panel on VPS/FastPanel
-  -> api.example.ru backend on same VPS
+  -> widget.stackworks.ru/admin/ static admin panel on VPS/FastPanel
+  -> api.stackworks.ru backend on same VPS
 ```
 
 ## Architecture decision update
@@ -51,8 +99,8 @@ VPS with FastPanel runs everything:
 - WebSocket
 - Telegram bot
 - SQLite database initially
-- admin panel static files
 - widget static files
+- admin panel static files under /admin/
 ```
 
 Raspberry Pi is removed from MVP architecture. It can be revisited later as an optional edge node, but not for the first production version.
@@ -65,10 +113,10 @@ Raspberry Pi is removed from MVP architecture. It can be revisited later as an o
 - Everything runs on VPS with FastPanel.
 - FastPanel must manage domains, SSL, and web server configs manually.
 - Project scripts must not create domains or edit global FastPanel configs.
-- Backend runs locally on VPS, preferably bound to `127.0.0.1:3000`.
-- `api.example.ru` is a reverse proxy to `http://127.0.0.1:3000`.
-- `admin.example.ru` serves admin panel static files.
-- `widget.example.ru` serves embeddable widget static files.
+- Backend runs locally on VPS, bound to `127.0.0.1:3000`.
+- `api.stackworks.ru` is a reverse proxy to `http://127.0.0.1:3000`.
+- `widget.stackworks.ru` serves embeddable widget static files.
+- Admin panel is served from the same webroot under `https://widget.stackworks.ru/admin/`.
 - SQLite database initially lives on VPS under project data directory.
 - PostgreSQL can be introduced later if needed.
 - WireGuard is no longer required for MVP.
@@ -78,22 +126,26 @@ Raspberry Pi is removed from MVP architecture. It can be revisited later as an o
 
 VPS with FastPanel manually configured by the user.
 
-Recommended subdomains:
+Required FastPanel sites:
 
 ```text
-admin.example.ru   -> static admin panel
-widget.example.ru  -> static widget
-api.example.ru     -> reverse proxy to local backend on VPS
+widget.stackworks.ru -> static widget + /admin/ admin panel
+api.stackworks.ru    -> reverse proxy to local backend on VPS
 ```
 
-DNS A-records for all three point to the VPS IP.
-
-FastPanel webroots are expected to look like:
+FastPanel webroot for widget/admin is expected to look like:
 
 ```text
-/var/www/<fastpanel-user>/data/www/admin.example.ru
-/var/www/<fastpanel-user>/data/www/widget.example.ru
+/var/www/<fastpanel-user>/data/www/widget.stackworks.ru
 ```
+
+In the current install, the correct widget webroot should be:
+
+```text
+/var/www/widget_stack_usr/data/www/widget.stackworks.ru
+```
+
+Do not publish widget/admin files into the `api.stackworks.ru` webroot.
 
 The backend source and runtime should live outside public webroots:
 
@@ -105,7 +157,7 @@ The backend source and runtime should live outside public webroots:
 /opt/ws-chat/updates
 ```
 
-`api.example.ru` may have a webroot created by FastPanel, but project files must not be published there. It should proxy to:
+`api.stackworks.ru` may have a webroot created by FastPanel, but project files must not be published there. It should proxy to:
 
 ```text
 http://127.0.0.1:3000
@@ -116,7 +168,7 @@ http://127.0.0.1:3000
 VPS public ports:
 
 - 80/tcp for HTTP/Let's Encrypt
-- 443/tcp for HTTPS admin/widget/api
+- 443/tcp for HTTPS widget/admin/API
 - SSH port, usually 22/tcp or custom
 
 Backend port:
@@ -171,11 +223,10 @@ Recommended project directory on VPS:
   data/
 ```
 
-FastPanel owns public directories:
+FastPanel owns public directory:
 
 ```text
-/var/www/<fastpanel-user>/data/www/admin.example.ru
-/var/www/<fastpanel-user>/data/www/widget.example.ru
+/var/www/<fastpanel-user>/data/www/widget.stackworks.ru
 ```
 
 Backend should be managed by PM2:
@@ -193,17 +244,17 @@ Never from project scripts:
 - overwrite FastPanel vhost configs
 - run broad `systemctl restart nginx`
 - install packages that replace FastPanel web stack
-- run frontend/backend as root
+- run frontend/backend as root beyond the current root-based MVP install model
 - bind project services directly to ports 80/443
 - delete parent `/var/www` directories
 
-Static deployment should copy files only into exact domain webroots.
+Static deployment should copy files only into exact domain webroot directories.
 
 Use rsync carefully:
 
 ```bash
-rsync -av --delete admin-panel/dist/ /var/www/siteuser/data/www/admin.example.ru/
-rsync -av --delete widget/dist/ /var/www/siteuser/data/www/widget.example.ru/
+rsync -av --delete widget/dist/ /var/www/widget_stack_usr/data/www/widget.stackworks.ru/
+rsync -av --delete admin-panel/dist/ /var/www/widget_stack_usr/data/www/widget.stackworks.ru/admin/
 ```
 
 Never run `rsync --delete` against `/var/www` or parent folders.
@@ -244,6 +295,7 @@ Use VPS-only deployment.
 ├── admin-panel/
 │   ├── index.html
 │   ├── package.json
+│   ├── vite.config.js
 │   └── src/
 │       ├── main.jsx
 │       └── styles.css
@@ -279,7 +331,11 @@ Features:
 
 - shows current step `[01/13]` style;
 - writes log file to `/tmp/wschat-install-YYYYMMDD-HHMMSS.log`;
-- asks for project path, domains, FastPanel webroots, Telegram token, JWT secret;
+- saves primary settings to `/opt/ws-chat/install-state.env`;
+- on repeated runs, can reuse saved settings;
+- supports `--yes` to use saved settings without questions;
+- supports `--reset` to ask settings again;
+- asks for project path, widget/admin domain, API domain, FastPanel widget webroot, Telegram token, JWT secret;
 - validates FastPanel webroot path shape;
 - installs base packages;
 - installs Node.js 20 via NodeSource;
@@ -292,8 +348,8 @@ Features:
 - starts/restarts PM2 process `wschat-backend`;
 - checks backend health at `http://127.0.0.1:3000/health`;
 - builds admin and widget;
-- publishes static files if webroots are configured and already exist;
-- prints FastPanel reverse proxy instructions for `api.example.ru`.
+- publishes widget files into widget webroot and admin files into `/admin/`;
+- prints FastPanel reverse proxy instructions for `api.stackworks.ru`.
 
 Installer does not create domains or edit FastPanel configs.
 
@@ -304,19 +360,25 @@ cd /opt/ws-chat/source
 bash deploy/vps/install.sh
 ```
 
-If repo is not cloned yet:
+Use saved settings without questions:
 
 ```bash
-mkdir -p /opt/ws-chat
-cd /opt/ws-chat
-git clone https://github.com/viktor138irk/chat.git source
-cd source
-bash deploy/vps/install.sh
+cd /opt/ws-chat/source
+bash deploy/vps/install.sh --yes
+```
+
+Reset settings:
+
+```bash
+cd /opt/ws-chat/source
+bash deploy/vps/install.sh --reset
 ```
 
 ### Root workspace
 
 - npm workspaces configured.
+- Root package renamed from `raspi-telegram-live-chat` to `wschat`.
+- Workspace package names renamed to `@wschat/*`.
 - Root scripts:
   - `dev:backend`
   - `dev:admin`
@@ -351,12 +413,18 @@ GET  /ws
 For VPS-only architecture, backend env should use:
 
 ```env
+APP_ENV=production
 APP_HOST=127.0.0.1
 APP_PORT=3000
-PUBLIC_API_URL=https://api.example.ru
-PUBLIC_WS_URL=wss://api.example.ru/ws
+PUBLIC_API_URL=https://api.stackworks.ru
+PUBLIC_WS_URL=wss://api.stackworks.ru/ws
 DATABASE_PATH=/opt/ws-chat/data/chat.sqlite
+ADMIN_ORIGIN=https://widget.stackworks.ru
+WIDGET_ORIGIN=https://widget.stackworks.ru
+ADMIN_BASE_PATH=/admin
 ```
+
+Backend health service name was renamed from `raspi-chat-backend` to `wschat-backend` in commit `ac14400b2eec875231f6300b7a48e8940cf73996`.
 
 ### Admin panel
 
@@ -364,10 +432,26 @@ React/Vite shell exists.
 
 It shows:
 
-- project dashboard
-- API health check
-- FastPanel-safe deployment note
-- SOCKS5 note
+- project dashboard;
+- API health check;
+- FastPanel-safe deployment note;
+- SOCKS5 note.
+
+Admin panel is served under:
+
+```text
+https://widget.stackworks.ru/admin/
+```
+
+Added `admin-panel/vite.config.js` with:
+
+```js
+base: '/admin/'
+```
+
+This fixed the white page caused by assets loading from `/assets/...` instead of `/admin/assets/...`.
+
+Admin API fallback was fixed from `http://localhost:3000` to `https://api.stackworks.ru` in commit `3e956e5c2ab65fe563f6c5d71bb2d032cbf8bcad`.
 
 ### Widget
 
@@ -375,18 +459,18 @@ Vanilla JS widget shell exists.
 
 It:
 
-- creates chat button
-- opens chat panel
-- creates visitorId in localStorage
-- sends messages to backend endpoint
+- creates chat button;
+- opens chat panel;
+- creates visitorId in localStorage;
+- sends messages to backend endpoint.
 
 Current embed example:
 
 ```html
 <script
-  src="https://widget.example.ru/widget.js"
+  src="https://widget.stackworks.ru/widget.js"
   data-site-id="site_xxxxx"
-  data-api-url="https://api.example.ru">
+  data-api-url="https://api.stackworks.ru">
 </script>
 ```
 
@@ -400,22 +484,23 @@ FastPanel-safe deploy script exists:
 deploy/deploy-agent/src/deploy-frontend.js
 ```
 
-It currently focuses on frontend publishing:
+It currently focuses on frontend publishing and needs to be updated for current single-webroot widget/admin deployment:
 
-- git fetch/pull
-- npm ci
-- builds admin-panel
-- builds widget
-- validates FastPanel webroot paths
-- rsyncs dist files into admin/widget webroots
-- does not touch FastPanel configs
+- git fetch/pull;
+- npm ci/install;
+- builds admin-panel;
+- builds widget;
+- validates FastPanel webroot path;
+- rsyncs widget dist to widget webroot;
+- rsyncs admin dist to widget webroot `/admin/`;
+- does not touch FastPanel configs.
 
 Need to extend deployment process for VPS-only backend:
 
-- install backend deps
-- keep `/opt/ws-chat/data` persistent
-- restart PM2 process `wschat-backend`
-- never expose backend on public port
+- install backend deps;
+- keep `/opt/ws-chat/data` persistent;
+- restart PM2 process `wschat-backend`;
+- never expose backend on public port.
 
 Important env variable:
 
@@ -425,7 +510,7 @@ FASTPANEL_SAFE_MODE=true
 
 ## Existing docs
 
-- `docs/VPS_ONLY_INSTALL.md`: current VPS-only install guide.
+- `docs/VPS_ONLY_INSTALL.md`: current VPS-only install guide, needs final cleanup for widget/admin same-domain scheme.
 - `docs/INSTALL.md`: old full install guide for VPS + Raspberry Pi; deprecated.
 - `docs/FASTPANEL.md`: FastPanel-safe deployment guide; needs update for backend on same VPS.
 - `docs/FASTPANEL_MANUAL_FRONTEND.md`: manual frontend installation through FastPanel.
@@ -443,21 +528,16 @@ FASTPANEL_SAFE_MODE=true
 - Update bundle workflow: `b1fa5ead43f33e80c7208b98bcea6e0fa68d5682`
 - Raspberry armhf bootstrap fix: `fbe84c8b16a51cdd4931ecf0b1e0fa8654edec6a`
 - Architecture switched to VPS-only after Raspberry issues: `28b0ca37c4032633811cce4dc096d1c714c5d5a2`
-- Project path renamed to `/opt/ws-chat` and PM2 process to `wschat-backend`.
-- Interactive VPS installer added: current updates.
+- Backend health renamed to WSChat: `ac14400b2eec875231f6300b7a48e8940cf73996`
+- Admin Vite base `/admin/` added: `9943376645882eeb3cdc372b5292c72519e005b2`
+- Admin API fallback fixed: `3e956e5c2ab65fe563f6c5d71bb2d032cbf8bcad`
 
 ## Next development steps
 
-1. Test `deploy/vps/install.sh` on the VPS.
-2. Finish updating docs to WSChat/VPS-only architecture.
-3. Update package names/descriptions from raspi-chat to wschat where useful.
-4. Add VPS backend deploy/update script or extend deploy-agent:
-   - install backend deps
-   - create `/opt/ws-chat/data`
-   - prepare backend env
-   - build admin/widget
-   - publish static files safely
-   - start/restart backend with PM2 `wschat-backend`
+1. Pull latest changes on VPS and rebuild/publish admin so it uses `https://api.stackworks.ru`.
+2. Verify admin panel API card shows `ok: true`.
+3. Finish updating docs to WSChat/VPS-only same-domain widget/admin architecture.
+4. Update deploy-agent for widget/admin same webroot and backend restart.
 5. Fix widget production build so it outputs stable `widget.js`.
 6. Add SQLite database layer:
    - sites
@@ -496,6 +576,7 @@ FASTPANEL_SAFE_MODE=true
 - User changed architecture to VPS-only after Raspberry issues.
 - User named the system WSChat and chose `/opt/ws-chat` as the project path.
 - VPS currently uses root user by default, so MVP installation can run as root.
+- Widget and admin must live in one FastPanel site: widget at `/`, admin at `/admin/`.
 
 ## How to continue in a new chat
 
@@ -504,5 +585,5 @@ Open this file first. Then continue from "Next development steps".
 Recommended next task:
 
 ```text
-Test deploy/vps/install.sh on VPS, then implement SQLite schema and message persistence.
+Verify admin API health after rebuild, then implement SQLite schema and message persistence.
 ```
