@@ -256,7 +256,8 @@ Use VPS-only deployment.
 │   ├── deploy-agent/
 │   └── vps/
 │       ├── .env.example
-│       └── bootstrap.sh
+│       ├── bootstrap.sh
+│       └── install.sh
 └── docs/
     ├── FASTPANEL.md
     ├── FASTPANEL_MANUAL_FRONTEND.md
@@ -267,6 +268,51 @@ Use VPS-only deployment.
 ```
 
 ## Implemented so far
+
+### VPS interactive installer
+
+Added `deploy/vps/install.sh`.
+
+It is an interactive root installer with progress and error logging.
+
+Features:
+
+- shows current step `[01/13]` style;
+- writes log file to `/tmp/wschat-install-YYYYMMDD-HHMMSS.log`;
+- asks for project path, domains, FastPanel webroots, Telegram token, JWT secret;
+- validates FastPanel webroot path shape;
+- installs base packages;
+- installs Node.js 20 via NodeSource;
+- installs PM2;
+- creates `/opt/ws-chat` directories;
+- clones/updates repo;
+- installs npm dependencies;
+- writes `backend/.env`;
+- writes `/opt/ws-chat/install-state.env`;
+- starts/restarts PM2 process `wschat-backend`;
+- checks backend health at `http://127.0.0.1:3000/health`;
+- builds admin and widget;
+- publishes static files if webroots are configured and already exist;
+- prints FastPanel reverse proxy instructions for `api.example.ru`.
+
+Installer does not create domains or edit FastPanel configs.
+
+Run on VPS as root:
+
+```bash
+cd /opt/ws-chat/source
+bash deploy/vps/install.sh
+```
+
+If repo is not cloned yet:
+
+```bash
+mkdir -p /opt/ws-chat
+cd /opt/ws-chat
+git clone https://github.com/viktor138irk/chat.git source
+cd source
+bash deploy/vps/install.sh
+```
 
 ### Root workspace
 
@@ -397,21 +443,23 @@ FASTPANEL_SAFE_MODE=true
 - Update bundle workflow: `b1fa5ead43f33e80c7208b98bcea6e0fa68d5682`
 - Raspberry armhf bootstrap fix: `fbe84c8b16a51cdd4931ecf0b1e0fa8654edec6a`
 - Architecture switched to VPS-only after Raspberry issues: `28b0ca37c4032633811cce4dc096d1c714c5d5a2`
-- Project path renamed to `/opt/ws-chat` and PM2 process to `wschat-backend`: current updates
+- Project path renamed to `/opt/ws-chat` and PM2 process to `wschat-backend`.
+- Interactive VPS installer added: current updates.
 
 ## Next development steps
 
-1. Finish updating docs to WSChat/VPS-only architecture.
-2. Update package names/descriptions from raspi-chat to wschat where useful.
-3. Add VPS backend deploy/update script:
+1. Test `deploy/vps/install.sh` on the VPS.
+2. Finish updating docs to WSChat/VPS-only architecture.
+3. Update package names/descriptions from raspi-chat to wschat where useful.
+4. Add VPS backend deploy/update script or extend deploy-agent:
    - install backend deps
    - create `/opt/ws-chat/data`
    - prepare backend env
    - build admin/widget
    - publish static files safely
    - start/restart backend with PM2 `wschat-backend`
-4. Fix widget production build so it outputs stable `widget.js`.
-5. Add SQLite database layer:
+5. Fix widget production build so it outputs stable `widget.js`.
+6. Add SQLite database layer:
    - sites
    - operators
    - site_operators
@@ -419,23 +467,23 @@ FASTPANEL_SAFE_MODE=true
    - conversations
    - messages
    - settings
-6. Persist widget messages.
-7. Implement Telegram bot bridge:
+7. Persist widget messages.
+8. Implement Telegram bot bridge:
    - send website messages to allowed operators
    - map Telegram replies to conversations
    - send replies back to widget via WebSocket
-8. Add admin auth.
-9. Add admin CRUD:
+9. Add admin auth.
+10. Add admin CRUD:
    - sites
    - operators
    - operator-site permissions
    - Telegram settings
    - SOCKS5 settings
-10. Add origin/domain validation:
+11. Add origin/domain validation:
    - `site_id + Origin` must match configured site.
-11. Add manual update section in admin panel.
-12. Add update bundle generator and apply script.
-13. Prepare Android-ready API later.
+12. Add manual update section in admin panel.
+13. Add update bundle generator and apply script.
+14. Prepare Android-ready API later.
 
 ## User preferences and constraints
 
@@ -447,6 +495,7 @@ FASTPANEL_SAFE_MODE=true
 - User wants future auto-update file/bundle workflow.
 - User changed architecture to VPS-only after Raspberry issues.
 - User named the system WSChat and chose `/opt/ws-chat` as the project path.
+- VPS currently uses root user by default, so MVP installation can run as root.
 
 ## How to continue in a new chat
 
@@ -455,5 +504,5 @@ Open this file first. Then continue from "Next development steps".
 Recommended next task:
 
 ```text
-Finish WSChat/VPS-only cleanup, then implement SQLite schema and message persistence.
+Test deploy/vps/install.sh on VPS, then implement SQLite schema and message persistence.
 ```
