@@ -1,0 +1,12 @@
+{
+  "name": "@raspi-chat/deploy-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "node src/deploy-frontend.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7"
+  }
+}
