@@ -93,6 +93,7 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_conversations_site_status ON conversations(site_id, status);
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_messages_site_created ON messages(site_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_operators_telegram_user_id ON operators(telegram_user_id);
   `);
 
   ensureDefaultSite();
@@ -207,6 +208,50 @@ export function updateTelegramSettings(payload = {}) {
   return getTelegramSettings();
 }
 
+export function upsertTelegramOperator({ telegramUserId, telegramUsername, name }) {
+  const existing = db.prepare('SELECT * FROM operators WHERE telegram_user_id = ?').get(String(telegramUserId));
+
+  if (existing) {
+    db.prepare(`
+      UPDATE operators
+      SET name = ?, telegram_username = ?, is_active = 1, updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(name || existing.name, telegramUsername || existing.telegram_username, existing.id);
+    return db.prepare('SELECT * FROM operators WHERE id = ?').get(existing.id);
+  }
+
+  const id = `op_${nanoid(12)}`;
+  db.prepare(`
+    INSERT INTO operators (id, name, telegram_user_id, telegram_username, is_active)
+    VALUES (?, ?, ?, ?, 1)
+  `).run(id, name || `Operator ${telegramUserId}`, String(telegramUserId), telegramUsername || null);
+
+  db.prepare(`
+    INSERT OR IGNORE INTO site_operators (site_id, operator_id)
+    VALUES (?, ?)
+  `).run('site_default', id);
+
+  return db.prepare('SELECT * FROM operators WHERE id = ?').get(id);
+}
+
+export function listActiveTelegramOperatorsForSite(siteId) {
+  return db.prepare(`
+    SELECT operators.*
+    FROM operators
+    JOIN site_operators ON site_operators.operator_id = operators.id
+    WHERE site_operators.site_id = ?
+      AND operators.is_active = 1
+      AND operators.telegram_user_id IS NOT NULL
+  `).all(siteId);
+}
+
+export function getOperatorByTelegramUserId(telegramUserId) {
+  return db.prepare(`
+    SELECT * FROM operators
+    WHERE telegram_user_id = ? AND is_active = 1
+  `).get(String(telegramUserId));
+}
+
 export function getSiteByWidgetKey(widgetKey) {
   return db.prepare(`
     SELECT * FROM sites WHERE widget_key = ? AND is_active = 1
@@ -255,6 +300,20 @@ export function getOrCreateOpenConversation({ siteId, visitorId }) {
   return db.prepare('SELECT * FROM conversations WHERE id = ?').get(id);
 }
 
+export function getConversationWithVisitor(conversationId) {
+  return db.prepare(`
+    SELECT
+      conversations.*,
+      sites.name AS site_name,
+      sites.domain AS site_domain,
+      visitors.visitor_key
+    FROM conversations
+    JOIN sites ON sites.id = conversations.site_id
+    JOIN visitors ON visitors.id = conversations.visitor_id
+    WHERE conversations.id = ?
+  `).get(conversationId);
+}
+
 export function createVisitorMessage({ conversationId, siteId, visitorId, body }) {
   const id = `msg_${nanoid(14)}`;
   db.prepare(`
@@ -265,6 +324,22 @@ export function createVisitorMessage({ conversationId, siteId, visitorId, body }
   db.prepare(`
     UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?
   `).run(conversationId);
+
+  return db.prepare('SELECT * FROM messages WHERE id = ?').get(id);
+}
+
+export function createOperatorMessage({ conversationId, siteId, operatorId, body, telegramMessageId = null }) {
+  const id = `msg_${nanoid(14)}`;
+  db.prepare(`
+    INSERT INTO messages (id, conversation_id, site_id, operator_id, direction, body, transport, telegram_message_id)
+    VALUES (?, ?, ?, ?, 'operator', ?, 'telegram', ?)
+  `).run(id, conversationId, siteId, operatorId, body, telegramMessageId);
+
+  db.prepare(`
+    UPDATE conversations
+    SET updated_at = CURRENT_TIMESTAMP, assigned_operator_id = COALESCE(assigned_operator_id, ?)
+    WHERE id = ?
+  `).run(operatorId, conversationId);
 
   return db.prepare('SELECT * FROM messages WHERE id = ?').get(id);
 }
@@ -289,6 +364,7 @@ export function getStats() {
   const visitorCount = db.prepare('SELECT COUNT(*) AS count FROM visitors').get().count;
   const conversationCount = db.prepare('SELECT COUNT(*) AS count FROM conversations').get().count;
   const messageCount = db.prepare('SELECT COUNT(*) AS count FROM messages').get().count;
+  const operatorCount = db.prepare('SELECT COUNT(*) AS count FROM operators WHERE is_active = 1').get().count;
   const openConversationCount = db.prepare("SELECT COUNT(*) AS count FROM conversations WHERE status = 'open'").get().count;
 
   return {
@@ -296,6 +372,7 @@ export function getStats() {
     visitors: visitorCount,
     conversations: conversationCount,
     openConversations: openConversationCount,
-    messages: messageCount
+    messages: messageCount,
+    operators: operatorCount
   };
 }
