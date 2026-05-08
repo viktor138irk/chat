@@ -44,13 +44,15 @@ Current Raspberry status:
 
 - User reinstalled Raspberry Pi with 64-bit OS after armhf/Node.js issues.
 - User connected by SSH successfully.
-- Next setup path: install packages, install Node.js via NodeSource arm64, clone repo, configure backend env, start backend, then configure WireGuard.
+- NodeSource arm64 Node.js on Raspberry Pi 3B returned `Illegal instruction` for both `node -v` and `npm -v`.
+- Attempt to install Debian/Raspberry `nodejs npm` then showed corrupted downloaded `.deb` files in `/var/cache/apt/archives` and corrupted `/var/lib/dpkg/diversions`.
+- Next setup path: repair `/var/lib/dpkg/diversions`, clear apt cache, remove NodeSource, run `dpkg --configure -a`, then install distro `nodejs npm`.
 
 Recommended device/runtime:
 
 - Raspberry Pi 3 Model B
 - Raspberry Pi OS Lite 64-bit
-- Node.js 20 LTS via NodeSource arm64
+- Prefer distro Node.js from Raspberry Pi/Debian repo on Pi 3B if NodeSource arm64 gives `Illegal instruction`
 - SQLite
 - PM2
 - WireGuard client
@@ -58,6 +60,67 @@ Recommended device/runtime:
 Do not expose Raspberry Pi directly to the internet.
 
 Backend should listen on port 3000 and be reachable only through WireGuard from VPS.
+
+### Current Raspberry 64-bit Node.js / APT issue
+
+On Raspberry Pi 3B with 64-bit OS, NodeSource-installed Node.js returned:
+
+```text
+node -v -> Illegal instruction
+npm -v  -> Illegal instruction
+```
+
+Likely cause: NodeSource arm64 binary uses CPU instructions not available on Raspberry Pi 3B Cortex-A53.
+
+Then APT/DKPG showed corrupted archives and corrupted diversions file:
+
+```text
+E: Invalid archive signature
+E: Internal error, could not locate member control.tar{.zst,.lz4,.gz,.xz,.bz2,.lzma,}
+E: Prior errors apply to /var/cache/apt/archives/*.deb
+dpkg: unrecoverable fatal error, aborting:
+ too-long line or missing newline in '/var/lib/dpkg/diversions'
+Error: Sub-process /usr/bin/dpkg returned an error code (2)
+```
+
+Recommended recovery sequence:
+
+```bash
+sudo cp /var/lib/dpkg/diversions /var/lib/dpkg/diversions.bak.$(date +%Y%m%d-%H%M%S) 2>/dev/null || true
+sudo sed -i -e '$a\' /var/lib/dpkg/diversions
+sudo dpkg --configure -a
+sudo rm -f /var/cache/apt/archives/*.deb
+sudo rm -f /var/cache/apt/archives/partial/*.deb
+sudo apt clean
+sudo rm -f /etc/apt/sources.list.d/nodesource.list
+sudo rm -f /etc/apt/sources.list.d/nodesource.sources
+sudo rm -f /etc/apt/sources.list.d/node*.list
+sudo rm -f /etc/apt/sources.list.d/node*.sources
+sudo rm -f /etc/apt/keyrings/nodesource.gpg
+sudo rm -f /usr/share/keyrings/nodesource.gpg
+sudo apt update
+sudo apt --fix-broken install
+sudo apt install -y nodejs npm
+node -v
+npm -v
+```
+
+If `/var/lib/dpkg/diversions` remains corrupted after appending newline, inspect and repair manually:
+
+```bash
+sudo cp /var/lib/dpkg/diversions /root/diversions.bad
+sudo tail -n 20 /var/lib/dpkg/diversions
+sudo python3 - <<'PY'
+from pathlib import Path
+p = Path('/var/lib/dpkg/diversions')
+data = p.read_bytes()
+if data and not data.endswith(b'\n'):
+    p.write_bytes(data + b'\n')
+PY
+sudo dpkg --configure -a
+```
+
+If the fresh 64-bit OS continues corrupting apt archives, suspect SD card/power/network image issue before continuing development.
 
 ### Old Raspberry 32-bit Node.js issue
 
@@ -86,7 +149,7 @@ Action taken:
 - Updated `deploy/raspberry/bootstrap.sh` in commit `fbe84c8b16a51cdd4931ecf0b1e0fa8654edec6a`.
 - Script detects `dpkg --print-architecture`.
 - For `armhf`, it installs `nodejs npm` from Raspberry Pi/Debian apt repo instead of NodeSource.
-- For `arm64` and `amd64`, it can use NodeSource.
+- For `arm64` and `amd64`, it can use NodeSource, but this may fail on Raspberry Pi 3B with `Illegal instruction`.
 
 ## VPS/FastPanel target
 
