@@ -53,6 +53,44 @@ Do not expose Raspberry Pi directly to the internet.
 
 Backend should listen on port 3000 and be reachable only through WireGuard from VPS.
 
+### Raspberry Node.js issue discovered
+
+On Raspberry Pi OS 32-bit, architecture is `armhf`. NodeSource setup failed with:
+
+```text
+Unsupported architecture: armhf. Only amd64, arm64 are supported.
+```
+
+After attempted install, `node -v` and `npm -v` returned:
+
+```text
+Segmentation fault
+```
+
+Action taken:
+
+- Updated `deploy/raspberry/bootstrap.sh` in commit `fbe84c8b16a51cdd4931ecf0b1e0fa8654edec6a`.
+- Script now detects `dpkg --print-architecture`.
+- For `armhf`, it installs `nodejs npm` from Raspberry Pi/Debian apt repo instead of NodeSource.
+- For `arm64` and `amd64`, it can still use NodeSource.
+
+Next troubleshooting command sequence for this issue:
+
+```bash
+sudo rm -f /etc/apt/sources.list.d/nodesource.list
+sudo rm -f /etc/apt/keyrings/nodesource.gpg
+sudo apt update
+sudo apt purge -y nodejs npm libnode* node-* || true
+sudo apt autoremove -y
+sudo apt clean
+sudo apt update
+sudo apt install -y nodejs npm
+node -v
+npm -v
+```
+
+If `node -v` still segfaults after clean apt install, strongly consider switching Raspberry Pi to Raspberry Pi OS Lite 64-bit or using backend runtime alternatives.
+
 ## VPS/FastPanel target
 
 VPS with FastPanel manually configured by the user.
@@ -319,6 +357,7 @@ FASTPANEL_SAFE_MODE=true
 - Install guide: `4f86690a0118f69243ce4da9b515aaace5b20017`
 - Manual FastPanel frontend guide: `ba08112dc628fd276a2f8eade63145b32aa42c95`
 - Update bundle workflow: `b1fa5ead43f33e80c7208b98bcea6e0fa68d5682`
+- Raspberry armhf bootstrap fix: `fbe84c8b16a51cdd4931ecf0b1e0fa8654edec6a`
 
 ## Next development steps
 
