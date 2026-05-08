@@ -212,7 +212,7 @@ FRONTEND_DEPLOY_RELEASES_PATH=/opt/raspi-chat/releases
 FRONTEND_DEPLOY_ADMIN_WEBROOT=/var/www/example_user/data/www/admin.example.ru
 FRONTEND_DEPLOY_WIDGET_WEBROOT=/var/www/example_user/data/www/widget.example.ru
 FRONTEND_DEPLOY_WEBHOOK_SECRET=
-FRONTPANEL_SAFE_MODE=true
+FASTPANEL_SAFE_MODE=true
 ```
 
 MVP implementation should run the deployment agent directly on the VPS. The deploy agent must have permissions only for the project source, release directory, and specific FastPanel web roots.
