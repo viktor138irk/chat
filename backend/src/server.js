@@ -226,10 +226,13 @@ app.get('/ws', { websocket: true }, (connection, request) => {
   connection.send(JSON.stringify({ type: 'connected', visitorId }));
 });
 
-await startTelegramBridge({ logger: app.log });
-
 try {
   await app.listen({ host: config.app.host, port: config.app.port });
+  app.log.info({ host: config.app.host, port: config.app.port }, 'WSChat API started');
+
+  startTelegramBridge({ logger: app.log }).catch((error) => {
+    app.log.error(error, 'Telegram bridge async startup failed');
+  });
 } catch (error) {
   app.log.error(error);
   process.exit(1);
