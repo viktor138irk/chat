@@ -40,11 +40,17 @@ Website with embedded widget
 
 ## Raspberry Pi target
 
-Recommended device:
+Current Raspberry status:
+
+- User reinstalled Raspberry Pi with 64-bit OS after armhf/Node.js issues.
+- User connected by SSH successfully.
+- Next setup path: install packages, install Node.js via NodeSource arm64, clone repo, configure backend env, start backend, then configure WireGuard.
+
+Recommended device/runtime:
 
 - Raspberry Pi 3 Model B
-- Raspberry Pi OS Lite 32-bit
-- Node.js backend
+- Raspberry Pi OS Lite 64-bit
+- Node.js 20 LTS via NodeSource arm64
 - SQLite
 - PM2
 - WireGuard client
@@ -53,9 +59,9 @@ Do not expose Raspberry Pi directly to the internet.
 
 Backend should listen on port 3000 and be reachable only through WireGuard from VPS.
 
-### Raspberry Node.js issue discovered
+### Old Raspberry 32-bit Node.js issue
 
-On Raspberry Pi OS 32-bit, architecture is `armhf`. NodeSource setup failed with:
+On previous Raspberry Pi OS 32-bit install, architecture was `armhf`. NodeSource setup failed with:
 
 ```text
 Unsupported architecture: armhf. Only amd64, arm64 are supported.
@@ -78,41 +84,9 @@ Error: Sub-process /usr/bin/dpkg returned an error code (2)
 Action taken:
 
 - Updated `deploy/raspberry/bootstrap.sh` in commit `fbe84c8b16a51cdd4931ecf0b1e0fa8654edec6a`.
-- Script now detects `dpkg --print-architecture`.
+- Script detects `dpkg --print-architecture`.
 - For `armhf`, it installs `nodejs npm` from Raspberry Pi/Debian apt repo instead of NodeSource.
-- For `arm64` and `amd64`, it can still use NodeSource.
-
-Next troubleshooting command sequence for dpkg corruption:
-
-```bash
-sudo cp /var/lib/dpkg/info/node-lodash-packages.list /var/lib/dpkg/info/node-lodash-packages.list.bak 2>/dev/null || true
-printf '\n' | sudo tee -a /var/lib/dpkg/info/node-lodash-packages.list >/dev/null
-sudo dpkg --configure -a
-sudo apt --fix-broken install
-sudo apt purge -y nodejs npm libnode* node-* || true
-sudo apt autoremove -y
-sudo apt clean
-sudo apt update
-sudo apt install -y nodejs npm
-node -v
-npm -v
-```
-
-If that fails, move the corrupted dpkg info files aside and retry:
-
-```bash
-sudo mkdir -p /root/dpkg-node-lodash-packages-backup
-sudo mv /var/lib/dpkg/info/node-lodash-packages.* /root/dpkg-node-lodash-packages-backup/ 2>/dev/null || true
-sudo dpkg --configure -a
-sudo apt --fix-broken install
-sudo apt purge -y nodejs npm libnode* node-* || true
-sudo apt autoremove -y
-sudo apt clean
-sudo apt update
-sudo apt install -y nodejs npm
-```
-
-If `node -v` still segfaults after clean apt install, strongly consider switching Raspberry Pi to Raspberry Pi OS Lite 64-bit or using backend runtime alternatives.
+- For `arm64` and `amd64`, it can use NodeSource.
 
 ## VPS/FastPanel target
 
