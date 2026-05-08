@@ -3,6 +3,7 @@ set -Eeuo pipefail
 
 # Интерактивный установщик WSChat для VPS.
 # Домены и сайты FastPanel создаются вручную через интерфейс FastPanel.
+# Админка публикуется в том же webroot, что и виджет: https://widget.example.ru/admin/
 
 PROJECT_NAME="WSChat"
 DEFAULT_PROJECT_ROOT="/opt/ws-chat"
@@ -28,10 +29,8 @@ BACKEND_HOST="${BACKEND_HOST:-$DEFAULT_BACKEND_HOST}"
 BACKEND_PORT="${BACKEND_PORT:-$DEFAULT_BACKEND_PORT}"
 PM2_PROCESS_NAME="${PM2_PROCESS_NAME:-$DEFAULT_PM2_PROCESS}"
 
-ADMIN_DOMAIN="${ADMIN_DOMAIN:-admin.example.ru}"
 WIDGET_DOMAIN="${WIDGET_DOMAIN:-widget.example.ru}"
 API_DOMAIN="${API_DOMAIN:-api.example.ru}"
-ADMIN_WEBROOT="${ADMIN_WEBROOT:-}"
 WIDGET_WEBROOT="${WIDGET_WEBROOT:-}"
 TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
 JWT_SECRET="${JWT_SECRET:-}"
@@ -140,8 +139,9 @@ TRUST_PROXY=true
 
 DATABASE_PATH=${DATA_PATH}/chat.sqlite
 
-ADMIN_ORIGIN=https://${ADMIN_DOMAIN}
+ADMIN_ORIGIN=https://${WIDGET_DOMAIN}
 WIDGET_ORIGIN=https://${WIDGET_DOMAIN}
+ADMIN_BASE_PATH=/admin
 
 TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
 TELEGRAM_PROXY_ENABLED=false
@@ -169,11 +169,11 @@ DATA_PATH=${DATA_PATH}
 LOGS_PATH=${LOGS_PATH}
 BACKUPS_PATH=${BACKUPS_PATH}
 UPDATES_PATH=${UPDATES_PATH}
-ADMIN_DOMAIN=${ADMIN_DOMAIN}
 WIDGET_DOMAIN=${WIDGET_DOMAIN}
+ADMIN_URL=https://${WIDGET_DOMAIN}/admin/
 API_DOMAIN=${API_DOMAIN}
-ADMIN_WEBROOT=${ADMIN_WEBROOT}
 WIDGET_WEBROOT=${WIDGET_WEBROOT}
+ADMIN_SUBDIR=${WIDGET_WEBROOT}/admin
 BACKEND_HOST=${BACKEND_HOST}
 BACKEND_PORT=${BACKEND_PORT}
 PM2_PROCESS_NAME=${PM2_PROCESS_NAME}
@@ -186,6 +186,7 @@ print_header() {
   clear || true
   printf "${BOLD}${BLUE}Интерактивный установщик WSChat для VPS${NC}\n"
   printf "Сайты и домены FastPanel создаются вручную. Установщик не меняет конфиги FastPanel.\n"
+  printf "Админка публикуется в подкаталог виджета: https://<домен-виджета>/admin/\n"
   printf "Файл лога: %s\n\n" "$LOG_FILE"
 }
 
@@ -196,13 +197,13 @@ ${BOLD}Сводка настроек${NC}
 Каталог проекта:       ${PROJECT_ROOT}
 Каталог исходников:    ${SOURCE_PATH}
 Каталог данных:        ${DATA_PATH}
-Домен админки:         ${ADMIN_DOMAIN}
 Домен виджета:         ${WIDGET_DOMAIN}
+Админка:               https://${WIDGET_DOMAIN}/admin/
 Домен API:             ${API_DOMAIN}
 Backend:               http://${BACKEND_HOST}:${BACKEND_PORT}
 PM2-процесс:           ${PM2_PROCESS_NAME}
-Webroot админки:       ${ADMIN_WEBROOT:-не указан}
 Webroot виджета:       ${WIDGET_WEBROOT:-не указан}
+Каталог админки:       ${WIDGET_WEBROOT:-не указан}/admin
 Telegram token:        $(if [[ -n "$TELEGRAM_BOT_TOKEN" ]]; then echo "указан"; else echo "пусто"; fi)
 
 EOF
@@ -274,23 +275,20 @@ build_frontend() {
 
 publish_static_if_configured() {
   cd "$SOURCE_PATH"
-  if [[ -n "$ADMIN_WEBROOT" ]]; then
-    if [[ ! -d "$ADMIN_WEBROOT" ]]; then
-      warn "Webroot админки не найден: $ADMIN_WEBROOT"
-      warn "Публикация админки пропущена. Сначала создай сайт в FastPanel вручную."
-    else
-      run rsync -av --delete admin-panel/dist/ "$ADMIN_WEBROOT/"
-    fi
+  if [[ -z "$WIDGET_WEBROOT" ]]; then
+    warn "Webroot виджета не указан. Публикация виджета и админки пропущена."
+    return 0
   fi
 
-  if [[ -n "$WIDGET_WEBROOT" ]]; then
-    if [[ ! -d "$WIDGET_WEBROOT" ]]; then
-      warn "Webroot виджета не найден: $WIDGET_WEBROOT"
-      warn "Публикация виджета пропущена. Сначала создай сайт в FastPanel вручную."
-    else
-      run rsync -av --delete widget/dist/ "$WIDGET_WEBROOT/"
-    fi
+  if [[ ! -d "$WIDGET_WEBROOT" ]]; then
+    warn "Webroot виджета не найден: $WIDGET_WEBROOT"
+    warn "Публикация пропущена. Сначала создай сайт виджета в FastPanel вручную."
+    return 0
   fi
+
+  run rsync -av --delete widget/dist/ "$WIDGET_WEBROOT/"
+  run mkdir -p "$WIDGET_WEBROOT/admin"
+  run rsync -av --delete admin-panel/dist/ "$WIDGET_WEBROOT/admin/"
 }
 
 main() {
@@ -305,15 +303,12 @@ main() {
   BACKUPS_PATH="${PROJECT_ROOT}/backups"
   UPDATES_PATH="${PROJECT_ROOT}/updates"
 
-  ADMIN_DOMAIN="$(ask "Домен админки" "$ADMIN_DOMAIN")"
-  WIDGET_DOMAIN="$(ask "Домен виджета" "$WIDGET_DOMAIN")"
+  WIDGET_DOMAIN="$(ask "Домен виджета и админки" "$WIDGET_DOMAIN")"
   API_DOMAIN="$(ask "Домен API" "$API_DOMAIN")"
-  ADMIN_WEBROOT="$(ask "Webroot админки в FastPanel, оставь пустым чтобы пропустить публикацию" "$ADMIN_WEBROOT")"
-  WIDGET_WEBROOT="$(ask "Webroot виджета в FastPanel, оставь пустым чтобы пропустить публикацию" "$WIDGET_WEBROOT")"
+  WIDGET_WEBROOT="$(ask "Webroot сайта виджета в FastPanel, оставь пустым чтобы пропустить публикацию" "$WIDGET_WEBROOT")"
   TELEGRAM_BOT_TOKEN="$(ask_secret "Telegram bot token, можно оставить пустым")"
   JWT_SECRET="$(ask "JWT secret" "$(generate_secret)")"
 
-  validate_fastpanel_path "Admin" "$ADMIN_WEBROOT"
   validate_fastpanel_path "Widget" "$WIDGET_WEBROOT"
   print_summary
   read -r -p "Продолжить установку? [Y/n]: " confirm
@@ -356,16 +351,18 @@ main() {
   current_step "Сборка админки и виджета"
   build_frontend
 
-  current_step "Публикация статики, если webroot указан"
+  current_step "Публикация виджета и админки в один webroot"
   publish_static_if_configured
 
   current_step "Инструкция для proxy в FastPanel"
   cat <<EOF | tee -a "$LOG_FILE"
 
 Создай и настрой сайты вручную в FastPanel:
-- https://${ADMIN_DOMAIN}
-- https://${WIDGET_DOMAIN}
-- https://${API_DOMAIN}
+- https://${WIDGET_DOMAIN}       — виджет и админка
+- https://${API_DOMAIN}          — API reverse proxy
+
+Админка будет доступна по адресу:
+  https://${WIDGET_DOMAIN}/admin/
 
 Настрой ${API_DOMAIN} как reverse proxy на:
   http://${BACKEND_HOST}:${BACKEND_PORT}
@@ -398,6 +395,8 @@ EOF
   current_step "Завершение"
   ok "Установка backend WSChat завершена."
   ok "Локальная проверка backend: http://${BACKEND_HOST}:${BACKEND_PORT}/health"
+  ok "Виджет: https://${WIDGET_DOMAIN}/"
+  ok "Админка: https://${WIDGET_DOMAIN}/admin/"
   ok "PM2-процесс: ${PM2_PROCESS_NAME}"
   ok "Файл лога: ${LOG_FILE}"
   warn "Следующий шаг: настрой proxy API-домена в FastPanel и проверь https://${API_DOMAIN}/health"
