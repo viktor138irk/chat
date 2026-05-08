@@ -5,6 +5,7 @@ import {
   Bot,
   CheckCircle,
   Clock,
+  Database,
   KeyRound,
   MessageCircle,
   PlugZap,
@@ -61,12 +62,14 @@ function App() {
   const [stats, setStats] = useState(null);
   const [messages, setMessages] = useState([]);
   const [telegramSettings, setTelegramSettings] = useState(emptyTelegramSettings);
+  const [telegramBridge, setTelegramBridge] = useState(null);
   const [telegramDirty, setTelegramDirty] = useState(false);
   const [loading, setLoading] = useState(false);
   const [savingTelegram, setSavingTelegram] = useState(false);
   const [testingProxy, setTestingProxy] = useState(false);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [error, setError] = useState('');
+  const [telegramError, setTelegramError] = useState('');
   const [telegramNotice, setTelegramNotice] = useState('');
   const [proxyTestResult, setProxyTestResult] = useState(null);
 
@@ -104,10 +107,12 @@ function App() {
   async function loadTelegramSettings({ force = false } = {}) {
     if (telegramDirty && !force) return;
 
+    setTelegramError('');
     const response = await fetch(API_URL + '/api/admin/telegram/settings');
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || 'Telegram settings load failed');
     setTelegramSettings(data.settings || emptyTelegramSettings);
+    setTelegramBridge(data.bridge || null);
     setTelegramDirty(false);
   }
 
@@ -131,9 +136,15 @@ function App() {
       setHealth(healthData);
       setStats(statsData.stats || null);
       setMessages(Array.isArray(messagesData.messages) ? messagesData.messages : []);
+      if (healthData.telegram) setTelegramBridge(healthData.telegram);
+      if (statsData.telegram) setTelegramBridge(statsData.telegram);
 
       if (includeTelegram) {
-        await loadTelegramSettings({ force: false });
+        try {
+          await loadTelegramSettings({ force: false });
+        } catch (telegramRequestError) {
+          setTelegramError(telegramRequestError.message);
+        }
       }
 
       setLastUpdate(new Date());
@@ -149,6 +160,7 @@ function App() {
     event.preventDefault();
     setSavingTelegram(true);
     setTelegramNotice('');
+    setTelegramError('');
     setProxyTestResult(null);
 
     try {
@@ -171,8 +183,9 @@ function App() {
       const data = await response.json();
       if (!data.ok) throw new Error(data.error || 'Save failed');
       setTelegramSettings(data.settings || emptyTelegramSettings);
+      setTelegramBridge(data.bridge || telegramBridge);
       setTelegramDirty(false);
-      setTelegramNotice('Настройки Telegram/SOCKS5 сохранены.');
+      setTelegramNotice(data.message || 'Настройки Telegram/SOCKS5 сохранены.');
     } catch (saveError) {
       setTelegramNotice(`Ошибка сохранения: ${saveError.message}`);
     } finally {
@@ -183,6 +196,7 @@ function App() {
   async function testProxy() {
     setTestingProxy(true);
     setTelegramNotice('');
+    setTelegramError('');
 
     try {
       const response = await fetch(API_URL + '/api/admin/telegram/test-proxy', {
@@ -191,8 +205,30 @@ function App() {
       const data = await response.json();
       setProxyTestResult(data);
       if (data.settings && !telegramDirty) setTelegramSettings(data.settings);
+      if (data.bridge) setTelegramBridge(data.bridge);
     } catch (testError) {
       setProxyTestResult({ ok: false, status: 'error', message: testError.message });
+    } finally {
+      setTestingProxy(false);
+    }
+  }
+
+  async function restartBridge() {
+    setTestingProxy(true);
+    setTelegramNotice('');
+    setTelegramError('');
+
+    try {
+      const response = await fetch(API_URL + '/api/admin/telegram/restart', {
+        method: 'POST'
+      });
+      const data = await response.json();
+      if (!data.ok) throw new Error(data.error || 'Bridge restart failed');
+      setTelegramBridge(data.bridge || null);
+      setTelegramNotice(data.bridge?.running ? 'Telegram bridge перезапущен.' : `Bridge не запущен: ${data.bridge?.error || 'unknown error'}`);
+      await loadDashboard({ silent: true, includeTelegram: true });
+    } catch (restartError) {
+      setTelegramError(restartError.message);
     } finally {
       setTestingProxy(false);
     }
@@ -201,6 +237,7 @@ function App() {
   async function resetTelegramForm() {
     setTelegramDirty(false);
     setTelegramNotice('');
+    setTelegramError('');
     setProxyTestResult(null);
     await loadTelegramSettings({ force: true });
   }
@@ -225,6 +262,9 @@ function App() {
             <span className={telegramSettings.proxy.enabled ? 'status-pill ok' : 'status-pill muted'}>
               <Wifi size={14} /> SOCKS5: {telegramSettings.proxy.enabled ? 'включен' : 'выключен'}
             </span>
+            <span className={telegramBridge?.running ? 'status-pill ok' : 'status-pill bad'}>
+              <Bot size={14} /> bridge: {telegramBridge?.running ? 'online' : 'offline'}
+            </span>
             {telegramDirty ? (
               <span className="status-pill warn">
                 <Save size={14} /> есть несохранённые изменения
@@ -235,13 +275,14 @@ function App() {
             </span>
           </div>
         </div>
-        <button className="button" onClick={() => loadDashboard({ includeTelegram: false })} disabled={loading}>
+        <button className="button" onClick={() => loadDashboard({ includeTelegram: true })} disabled={loading}>
           <RefreshCw size={18} className={loading ? 'spin' : ''} />
           {loading ? 'Обновляю...' : 'Обновить'}
         </button>
       </section>
 
       {error ? <div className="alert">Ошибка API: {error}</div> : null}
+      {telegramError ? <div className="alert">Ошибка Telegram settings API: {telegramError}</div> : null}
 
       <section className="stats-grid">
         {statCards.map((card) => <StatCard key={card.label} {...card} />)}
@@ -257,6 +298,13 @@ function App() {
             <span className={telegramSettings.hasBotToken ? 'status-pill ok' : 'status-pill bad'}>
               <KeyRound size={14} /> token {telegramSettings.hasBotToken ? 'есть' : 'не задан'}
             </span>
+          </div>
+
+          <div className="diagnostics-grid">
+            <span><Server size={14} /> API: {API_URL}</span>
+            <span><Database size={14} /> DB: {health?.dbPath || 'неизвестно'}</span>
+            <span><Bot size={14} /> Bot: {telegramBridge?.username || 'неизвестно'}</span>
+            <span><Activity size={14} /> Error: {telegramBridge?.error || 'нет'}</span>
           </div>
 
           <form className="settings-form" onSubmit={saveTelegramSettings}>
@@ -343,9 +391,13 @@ function App() {
                 <PlugZap size={18} className={testingProxy ? 'spin' : ''} />
                 {testingProxy ? 'Проверяю...' : 'Проверить прокси'}
               </button>
+              <button className="button secondary-button" type="button" onClick={restartBridge} disabled={testingProxy || telegramDirty}>
+                <RefreshCw size={18} className={testingProxy ? 'spin' : ''} />
+                Restart bridge
+              </button>
               <button className="ghost-button" type="button" onClick={resetTelegramForm}>Сбросить форму</button>
             </div>
-            {telegramDirty ? <small className="wide-field form-hint">Сначала сохраните изменения, потом проверяйте прокси.</small> : null}
+            {telegramDirty ? <small className="wide-field form-hint">Сначала сохраните изменения, потом проверяйте прокси или перезапускайте bridge.</small> : null}
           </form>
 
           {telegramNotice ? <div className="notice"><CheckCircle size={16} /> {telegramNotice}</div> : null}
@@ -395,7 +447,7 @@ function App() {
           <article className="panel compact-panel">
             <Wifi />
             <h2>Telegram / SOCKS5</h2>
-            <p>Прокси уже сохраняется в SQLite. Следующий шаг — подключить Telegraf bridge и отправлять сообщения сайта операторам.</p>
+            <p>Источник настроек: SQLite через API. Сверяйте блок диагностики выше: API URL, DB path и bridge status.</p>
           </article>
 
           <article className="panel compact-panel">
