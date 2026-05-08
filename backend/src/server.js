@@ -17,6 +17,7 @@ import {
 import {
   getTelegramBridgeStatus,
   notifyOperatorsAboutVisitorMessage,
+  restartTelegramBridge,
   startTelegramBridge
 } from './telegram.js';
 
@@ -124,11 +125,12 @@ app.get('/api/admin/telegram/settings', async () => ({
 app.post('/api/admin/telegram/settings', async (request, reply) => {
   try {
     const settings = updateTelegramSettings(request.body || {});
+    const bridge = await restartTelegramBridge({ logger: app.log });
 
     return {
       ok: true,
       settings,
-      bridge: getTelegramBridgeStatus()
+      bridge
     };
   } catch (error) {
     reply.code(400);
@@ -138,6 +140,11 @@ app.post('/api/admin/telegram/settings', async (request, reply) => {
     };
   }
 });
+
+app.post('/api/admin/telegram/restart', async () => ({
+  ok: true,
+  bridge: await restartTelegramBridge({ logger: app.log })
+}));
 
 app.post('/api/admin/telegram/test-proxy', async () => {
   const settings = getTelegramSettings({ revealSecrets: true });
