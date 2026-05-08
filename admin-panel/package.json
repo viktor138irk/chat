@@ -1,5 +1,5 @@
 {
-  "name": "@raspi-chat/admin-panel",
+  "name": "@wschat/admin-panel",
   "version": "0.1.0",
   "private": true,
   "type": "module",
