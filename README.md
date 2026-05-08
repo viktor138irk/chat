@@ -15,9 +15,9 @@ Primary target for MVP:
 - Backend API on Raspberry Pi
 - Telegram bot on Raspberry Pi
 - SQLite database on Raspberry Pi
-- VPS for admin panel, widget.js, static assets, HTTPS, and public reverse proxy
+- VPS with FastPanel for admin panel, widget.js, static assets, HTTPS, and public reverse proxy
 - WireGuard between VPS and Raspberry Pi
-- Nginx + Let's Encrypt on VPS
+- Domain/site management through FastPanel where possible
 
 Cloudflare must not be required for this project.
 
@@ -29,7 +29,7 @@ Recommended OS for Raspberry Pi 3B MVP:
 ## Core components
 
 ```text
-website widget -> VPS Nginx/API proxy -> WireGuard -> Raspberry Pi backend -> SQLite -> Telegram bot -> operators
+website widget -> VPS FastPanel/Nginx/API proxy -> WireGuard -> Raspberry Pi backend -> SQLite -> Telegram bot -> operators
 
 VPS also serves:
 - admin panel
@@ -48,6 +48,7 @@ VPS also serves:
 - Operator/site access rules
 - SOCKS5 proxy settings for Telegram connectivity
 - Frontend deployment management from admin panel
+- FastPanel-safe frontend publishing on VPS
 
 ## Required admin settings
 
@@ -82,6 +83,58 @@ Admin panel should expose:
 
 Sensitive fields must be stored encrypted or kept in environment variables for MVP.
 
+### FastPanel-safe frontend hosting
+
+The frontend server uses FastPanel. The project deployment must not break, overwrite, restart, or bypass FastPanel-managed services.
+
+Hard rules:
+
+- Do not edit global FastPanel configs directly
+- Do not overwrite `/etc/nginx/nginx.conf`
+- Do not overwrite FastPanel-generated virtual host configs
+- Do not run broad `systemctl restart nginx` from the deploy script
+- Do not install packages that replace FastPanel web stack components
+- Do not run frontend as root
+- Do not bind frontend services to ports `80` or `443`
+- Prefer static build publishing into a FastPanel-created site directory
+- Use `nginx -t` before any reload if reload is unavoidable
+- Prefer no reload at all for static frontend updates
+
+Recommended FastPanel model:
+
+```text
+FastPanel creates domains/sites:
+- admin.example.ru
+- widget.example.ru
+- api.example.ru
+
+Deploy script only updates files inside the allowed web root:
+- admin panel build files
+- widget.js
+- widget assets
+```
+
+Recommended FastPanel-safe paths:
+
+```text
+/var/www/<fastpanel-user>/data/www/admin.example.ru
+/var/www/<fastpanel-user>/data/www/widget.example.ru
+/opt/raspi-chat/source
+/opt/raspi-chat/releases/<timestamp>
+/opt/raspi-chat/current -> /opt/raspi-chat/releases/<timestamp>
+```
+
+Deployment should copy or rsync built static files into the FastPanel site directories:
+
+```text
+admin-panel/dist/* -> /var/www/<fastpanel-user>/data/www/admin.example.ru/
+widget/dist/*      -> /var/www/<fastpanel-user>/data/www/widget.example.ru/
+```
+
+The API reverse proxy for `api.example.ru` should be configured through FastPanel custom Nginx directives if available, or through a separate include file that FastPanel will not overwrite.
+
+FastPanel compatibility must be treated as a deployment requirement, not an afterthought.
+
 ### Frontend deployment updates
 
 The admin panel must include a deployment section for updating the VPS-hosted frontend.
@@ -104,6 +157,8 @@ Admin panel should expose:
 - Deployment logs
 - Rollback to previous frontend build
 - Lock to prevent parallel deployments
+- FastPanel compatibility status
+- Target FastPanel web root paths
 
 Frontend deployment flow:
 
@@ -113,19 +168,10 @@ Admin clicks update button
   -> backend calls deploy agent on VPS
   -> VPS pulls latest repository changes
   -> VPS builds admin-panel and widget
-  -> VPS publishes new build atomically
+  -> VPS verifies FastPanel-safe target paths
+  -> VPS publishes new static build atomically
   -> backend stores deployment result
   -> admin panel shows status and logs
-```
-
-Recommended VPS frontend paths:
-
-```text
-/opt/raspi-chat/source
-/opt/raspi-chat/releases/<timestamp>
-/opt/raspi-chat/current -> /opt/raspi-chat/releases/<timestamp>
-/var/www/raspi-chat/admin
-/var/www/raspi-chat/widget
 ```
 
 Recommended deploy command on VPS:
@@ -137,13 +183,15 @@ npm run build --workspace admin-panel
 npm run build --workspace widget
 ```
 
-Publishing must be atomic:
+Publishing must be atomic and FastPanel-safe:
 
 ```text
 build new release directory
 verify build artifacts
-switch symlink
-reload nginx only if needed
+verify target directories are inside allowed FastPanel web roots
+copy files with rsync --delete only inside those roots
+never delete parent web root directories
+never touch FastPanel system configs
 ```
 
 Admin deployment permissions:
@@ -157,15 +205,17 @@ Environment variables:
 
 ```env
 FRONTEND_DEPLOY_ENABLED=true
-FRONTEND_DEPLOY_MODE=ssh
+FRONTEND_DEPLOY_MODE=local-vps
 FRONTEND_DEPLOY_BRANCH=main
-FRONTEND_DEPLOY_HOST=127.0.0.1
-FRONTEND_DEPLOY_USER=deploy
-FRONTEND_DEPLOY_PATH=/opt/raspi-chat/source
+FRONTEND_DEPLOY_SOURCE_PATH=/opt/raspi-chat/source
+FRONTEND_DEPLOY_RELEASES_PATH=/opt/raspi-chat/releases
+FRONTEND_DEPLOY_ADMIN_WEBROOT=/var/www/example_user/data/www/admin.example.ru
+FRONTEND_DEPLOY_WIDGET_WEBROOT=/var/www/example_user/data/www/widget.example.ru
 FRONTEND_DEPLOY_WEBHOOK_SECRET=
+FRONTPANEL_SAFE_MODE=true
 ```
 
-MVP implementation can run the deployment agent directly on VPS. Raspberry backend should call the VPS deploy endpoint through HTTPS, or the admin panel can call the VPS deploy API directly if protected by strong authentication.
+MVP implementation should run the deployment agent directly on the VPS. The deploy agent must have permissions only for the project source, release directory, and specific FastPanel web roots.
 
 ## Website widget
 
@@ -221,7 +271,7 @@ Planned Android-ready API concepts:
 - Vanilla JS widget
 - Telegram Bot API
 - WireGuard
-- Nginx
+- FastPanel-managed web server on VPS
 - PM2 preferred for Raspberry Pi 3B MVP
 
 ## Development phases
@@ -245,7 +295,7 @@ Planned Android-ready API concepts:
 
 ### Phase 3
 
-- VPS frontend deployment scripts
+- FastPanel-safe VPS frontend deployment scripts
 - Admin button for frontend update
 - Deployment logs
 - GitHub webhook auto-update
@@ -258,7 +308,7 @@ Planned Android-ready API concepts:
 - Rate limiting
 - Origin/domain validation
 - Backup script
-- Deployment guide for Raspberry Pi and VPS
+- Deployment guide for Raspberry Pi, VPS, FastPanel, and WireGuard
 
 ### Phase 5
 
