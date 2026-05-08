@@ -1,11 +1,19 @@
-# Development state snapshot
+# WSChat development state snapshot
 
 Project: WSChat
 Repository: https://github.com/viktor138irk/chat
 Owner: viktor138irk
 Default branch: main
 
-This file is a compact project memory for continuing development in a new chat/dialog.
+This file is the main project memory for continuing development in a new chat/dialog. Always open this file first before continuing work.
+
+## Mandatory working rule
+
+After every meaningful code, deployment, architecture, or debugging change, update this `.sw` file in the repository.
+
+The user explicitly requested: keep writing/updating `.sw` constantly during further development.
+
+Do not rely on chat history only. `.sw` must remain the source of truth for project state, current bugs, fixes, deployment commands, and next steps.
 
 ## Product idea
 
@@ -13,14 +21,16 @@ Build a self-hosted live chat system similar to Jivo, but with Telegram as the o
 
 Website visitors use an embeddable widget. Messages go to selected Telegram operators. Operators reply in Telegram, and replies return to the website widget.
 
+Future direction: Android app support should be planned in the API, but MVP is VPS + website widget + Telegram operators.
+
 ## Current production/test deployment
 
 Current tested domains:
 
 ```text
-https://widget.stackworks.ru/        -> widget works
-https://widget.stackworks.ru/admin/  -> admin works after Vite base fix
-https://api.stackworks.ru/health     -> backend API works
+https://widget.stackworks.ru/        -> widget static site
+https://widget.stackworks.ru/admin/  -> admin panel
+https://api.stackworks.ru/health     -> backend API through FastPanel reverse proxy
 ```
 
 Current VPS paths:
@@ -39,13 +49,54 @@ Current PM2 process:
 wschat-backend
 ```
 
-Current local backend:
+Backend listens locally only:
 
 ```text
 http://127.0.0.1:3000
 ```
 
-Current backend env requirements:
+FastPanel reverse proxy:
+
+```text
+api.stackworks.ru -> http://127.0.0.1:3000
+```
+
+Widget/admin webroot:
+
+```text
+/var/www/widget_stack_usr/data/www/widget.stackworks.ru
+```
+
+Admin panel lives under:
+
+```text
+/var/www/widget_stack_usr/data/www/widget.stackworks.ru/admin/
+```
+
+## Architecture decision
+
+MVP is VPS-only.
+
+Raspberry Pi 3B was removed from MVP because of Node.js/OS/DPKG problems:
+
+- 32-bit OS: NodeSource armhf incompatibility and segfaults.
+- 64-bit OS: NodeSource arm64 produced `Illegal instruction`.
+- APT/DPKG corruption was observed.
+
+Current architecture:
+
+```text
+Website with embed widget
+  -> widget.stackworks.ru static widget/admin
+  -> api.stackworks.ru HTTPS reverse proxy
+  -> Node.js Fastify backend on 127.0.0.1:3000
+  -> SQLite at /opt/ws-chat/data/chat.sqlite
+  -> Telegram bridge via Telegraf
+  -> optional SOCKS5 proxy for Telegram
+  -> Telegram operators
+```
+
+## Current backend env requirements
 
 ```env
 APP_ENV=production
@@ -58,28 +109,27 @@ DATABASE_PATH=/opt/ws-chat/data/chat.sqlite
 ADMIN_ORIGIN=https://widget.stackworks.ru
 WIDGET_ORIGIN=https://widget.stackworks.ru
 ADMIN_BASE_PATH=/admin
+
+TELEGRAM_BOT_TOKEN=
+TELEGRAM_PROXY_ENABLED=false
+TELEGRAM_PROXY_TYPE=socks5
+TELEGRAM_PROXY_HOST=127.0.0.1
+TELEGRAM_PROXY_PORT=9050
+TELEGRAM_PROXY_USERNAME=
+TELEGRAM_PROXY_PASSWORD=
 ```
 
-Important fixes already made:
+Important: Telegram settings are now also persisted in SQLite `settings` table and managed from admin panel.
 
-- Admin panel previously displayed `API: http://localhost:3000` and `Failed to fetch` because browser localhost points to the user's PC, not VPS.
-- `admin-panel/src/main.jsx` fallback API URL was changed to `https://api.stackworks.ru` in commit `3e956e5c2ab65fe563f6c5d71bb2d032cbf8bcad`.
-- Backend did not reliably load `backend/.env`, so env stayed `development` and CORS did not include `access-control-allow-origin` for `https://widget.stackworks.ru`.
-- `backend/src/config.js` now loads `backend/.env` by absolute path in commit `4f6339b37c0bbdfa11c12cacb5d12265fb5dd59b`.
-- Admin HTML title was changed from `Raspi Chat Admin` to `WSChat Admin` in commit `e5cac5ef34287931f7661bc26dcf739cdf9e7f90`.
-- If Telegram bot token was ever pasted into chat/logs, it must be revoked/regenerated in BotFather before production use.
+## Database
 
-## Current backend persistence implementation
-
-SQLite layer added in commit `502d214eac515863037d8f2bc6f09161dc19624e`.
-
-New file:
+SQLite DB path:
 
 ```text
-backend/src/db.js
+/opt/ws-chat/data/chat.sqlite
 ```
 
-It creates and manages:
+Tables currently managed by `backend/src/db.js`:
 
 ```text
 sites
@@ -91,597 +141,290 @@ messages
 settings
 ```
 
-SQLite database path comes from:
-
-```env
-DATABASE_PATH=/opt/ws-chat/data/chat.sqlite
-```
-
-Backend now calls `migrate()` on startup and creates default site:
+Default site:
 
 ```text
 site id: site_default
 widget_key: site_default
 ```
 
-Widget message persistence added in commit `bb6dcb106948f83ec588b03777c3ce263509e80a`.
+Important Telegram settings keys:
 
-Current backend endpoints:
+```text
+telegram.bot_token
+telegram.proxy.enabled
+telegram.proxy.type
+telegram.proxy.host
+telegram.proxy.port
+telegram.proxy.username
+telegram.proxy.password
+```
+
+Check saved proxy settings on VPS:
+
+```bash
+sqlite3 /opt/ws-chat/data/chat.sqlite "select key, value from settings where key like 'telegram.proxy.%';"
+```
+
+Check token length without exposing token:
+
+```bash
+sqlite3 /opt/ws-chat/data/chat.sqlite "select key, length(value) as len from settings where key='telegram.bot_token';"
+```
+
+## Current backend endpoints
 
 ```text
 GET  /health
 GET  /api/config/public
 GET  /api/admin/stats
 GET  /api/admin/messages?limit=50
+GET  /api/admin/telegram/settings
+POST /api/admin/telegram/settings
+POST /api/admin/telegram/test-proxy
+POST /api/admin/telegram/restart
 POST /api/widget/message
 GET  /ws
 ```
 
-`POST /api/widget/message` now:
-
-- validates `siteId`, `visitorId`, `message`;
-- checks active site by `widget_key`;
-- creates/touches visitor;
-- creates/reuses open conversation;
-- saves visitor message into SQLite;
-- returns `status: saved`, `conversationId`, and `messageId`.
-
-Test commands after pulling latest code on VPS:
-
-```bash
-cd /opt/ws-chat/source
-git pull --ff-only origin main
-npm install
-pm2 restart wschat-backend --update-env
-
-curl http://127.0.0.1:3000/health
-
-curl -s https://api.stackworks.ru/api/admin/stats | jq
-
-curl -s -X POST https://api.stackworks.ru/api/widget/message \
-  -H 'Content-Type: application/json' \
-  -H 'Origin: https://widget.stackworks.ru' \
-  -d '{"siteId":"site_default","visitorId":"test_visitor_1","message":"Тестовое сообщение WSChat"}' | jq
-
-curl -s https://api.stackworks.ru/api/admin/messages | jq
-```
-
-Expected POST result:
+`/health` now should include Telegram bridge state:
 
 ```json
 {
   "ok": true,
-  "status": "saved",
-  "conversationId": "conv_...",
-  "messageId": "msg_..."
+  "service": "wschat-backend",
+  "env": "production",
+  "telegram": {
+    "enabled": true,
+    "running": true,
+    "error": "",
+    "username": "...",
+    "proxyEnabled": true,
+    "startedAt": "...",
+    "hasBot": true
+  }
 }
 ```
 
-## Current architecture
+## Admin panel current state
 
-The architecture is VPS-only.
-
-```text
-Website with embedded widget
-  -> widget.stackworks.ru static widget and admin panel on VPS/FastPanel
-  -> api.stackworks.ru public HTTPS endpoint on VPS/FastPanel
-  -> local reverse proxy to Node.js backend on VPS
-  -> SQLite on VPS
-  -> Telegram bot API / optional SOCKS5
-  -> Telegram operators
-
-Admin user
-  -> widget.stackworks.ru/admin/ static admin panel on VPS/FastPanel
-  -> api.stackworks.ru backend on same VPS
-```
-
-## Architecture decision update
-
-The architecture was changed from Raspberry Pi backend to VPS-only deployment.
-
-Reason:
-
-- Raspberry Pi 3B caused repeated low-level system issues.
-- 32-bit OS had NodeSource `armhf` incompatibility.
-- 64-bit OS with NodeSource arm64 produced `Illegal instruction` on Node.js.
-- APT/DPKG then showed corrupted archives and `/var/lib/dpkg/diversions` issues.
-- Continuing on Raspberry Pi would waste time and increase operational risk.
-
-New decision:
+Admin is a React/Vite panel at:
 
 ```text
-VPS with FastPanel runs everything:
-- backend API
-- WebSocket
-- Telegram bot
-- SQLite database initially
-- widget static files
-- admin panel static files under /admin/
+https://widget.stackworks.ru/admin/
 ```
 
-Raspberry Pi is removed from MVP architecture. It can be revisited later as an optional edge node, but not for the first production version.
+Implemented:
 
-## Deployment decisions
+- dark compact dashboard UI;
+- API health indicator;
+- stats cards;
+- recent messages list from SQLite;
+- auto-refresh of dashboard data;
+- Telegram/SOCKS5 settings form;
+- dirty-state protection so auto-refresh no longer wipes input while typing;
+- token/password masks `********`;
+- SOCKS5 enable/host/port/login/password fields;
+- save settings button;
+- test proxy button;
+- reset form button.
 
-- Project name: WSChat.
-- Main project directory: `/opt/ws-chat`.
-- Cloudflare must not be used because of availability issues in Russia.
-- Everything runs on VPS with FastPanel.
-- FastPanel must manage domains, SSL, and web server configs manually.
-- Project scripts must not create domains or edit global FastPanel configs.
-- Backend runs locally on VPS, bound to `127.0.0.1:3000`.
-- `api.stackworks.ru` is a reverse proxy to `http://127.0.0.1:3000`.
-- `widget.stackworks.ru` serves embeddable widget static files.
-- Admin panel is served from the same webroot under `https://widget.stackworks.ru/admin/`.
-- SQLite database initially lives on VPS under project data directory.
-- PostgreSQL can be introduced later if needed.
-- WireGuard is no longer required for MVP.
-- No Raspberry home networking or port forwarding is required.
+Important fix: dashboard auto-refresh must not reload Telegram/SOCKS5 form while the user is editing it.
 
-## VPS/FastPanel target
+## Telegram bridge current state
 
-VPS with FastPanel manually configured by the user.
-
-Required FastPanel sites:
+Runtime bridge file:
 
 ```text
-widget.stackworks.ru -> static widget + /admin/ admin panel
-api.stackworks.ru    -> reverse proxy to local backend on VPS
+backend/src/telegram.js
 ```
 
-FastPanel webroot for widget/admin is expected to look like:
+Dependencies:
 
 ```text
-/var/www/<fastpanel-user>/data/www/widget.stackworks.ru
+telegraf
+socks-proxy-agent
+node-fetch
 ```
 
-In the current install, the correct widget webroot should be:
+Current behavior:
+
+- backend starts Telegram bridge on startup using settings from SQLite;
+- `/start` registers Telegram user as active operator;
+- new operator is linked to `site_default` through `site_operators`;
+- `/status` replies with bridge status;
+- text reply in Telegram can be saved as operator message if it is a reply to WSChat notification containing `Conversation: conv_...`;
+- website visitor message is saved to SQLite and then sent to active Telegram operators;
+- operator reply is saved to SQLite, but delivery back to widget via WebSocket is not finished yet.
+
+Important: bridge originally used `socks5://`, but successful curl test showed Telegram must be accessed via `socks5h://` so DNS resolves through proxy.
+
+Current fix:
 
 ```text
-/var/www/widget_stack_usr/data/www/widget.stackworks.ru
+backend/src/telegram.js uses socks5h:// for SocksProxyAgent
 ```
 
-Do not publish widget/admin files into the `api.stackworks.ru` webroot.
-
-The backend source and runtime should live outside public webroots:
+Commit for this fix:
 
 ```text
-/opt/ws-chat/source
-/opt/ws-chat/data
-/opt/ws-chat/logs
-/opt/ws-chat/backups
-/opt/ws-chat/updates
+4b46aabc8210158f97c3c6e9274b8f703f7a8aa2
 ```
 
-`api.stackworks.ru` may have a webroot created by FastPanel, but project files must not be published there. It should proxy to:
+## Telegram/SOCKS5 debugging history
+
+Observed `/health` error before socks5h fix:
 
 ```text
-http://127.0.0.1:3000
+request to https://api.telegram.org/bot.../getMe failed, reason: Proxy connection timed out
 ```
 
-## Ports
+User confirmed SOCKS5 itself works from VPS with curl:
 
-VPS public ports:
-
-- 80/tcp for HTTP/Let's Encrypt
-- 443/tcp for HTTPS widget/admin/API
-- SSH port, usually 22/tcp or custom
-
-Backend port:
-
-- Node.js backend listens on `127.0.0.1:3000` only.
-- Do not expose port 3000 publicly.
-
-No WireGuard port is required for MVP.
-
-## SOCKS5 requirement
-
-Telegram settings must support optional SOCKS5 proxy:
-
-```env
-TELEGRAM_PROXY_ENABLED=false
-TELEGRAM_PROXY_TYPE=socks5
-TELEGRAM_PROXY_HOST=127.0.0.1
-TELEGRAM_PROXY_PORT=9050
-TELEGRAM_PROXY_USERNAME=
-TELEGRAM_PROXY_PASSWORD=
+```bash
+curl -v --proxy 'socks5h://proxy:Adelina%402015@194.156.65.175:42673' https://api.telegram.org
 ```
 
-Admin panel should eventually expose:
-
-- enable/disable SOCKS5
-- host
-- port
-- username
-- password
-- test connection button
-
-## Frontend and backend update decision
-
-The user wants manual-safe installation on VPS first, to avoid breaking FastPanel.
-
-Future update mechanism:
-
-- Assistant can prepare an update bundle file.
-- User uploads it to VPS.
-- Auto-updater applies changes safely.
-- Updates can cover admin, widget, backend/API, docs, and config templates.
-
-Recommended project directory on VPS:
+Result showed:
 
 ```text
-/opt/ws-chat/
-  source/
-  updates/
-  backups/
-  logs/
-  build/
-  data/
+SOCKS5 request granted
+HTTP/2 302
 ```
 
-FastPanel owns public directory:
+This proves proxy works and Telegram is reachable through it.
+
+Important note: the SOCKS5 password contains `@`. In curl URL it must be encoded as `%40`, but in admin panel it should be entered normally as `Adelina@2015`. Code uses `encodeURIComponent`, so the app should encode it correctly.
+
+Current proxy values used in testing:
 
 ```text
-/var/www/<fastpanel-user>/data/www/widget.stackworks.ru
+Host: 194.156.65.175
+Port: 42673
+Login: proxy
+Password: Adelina@2015
+SOCKS5 enabled: true
 ```
 
-Backend should be managed by PM2:
+Do not expose Telegram bot token in chat or logs.
 
-```text
-pm2 process: wschat-backend
-entry: /opt/ws-chat/source/backend/src/server.js
+## Important commits after original snapshot
+
+- `eae37d38a98026c39e4cd71e0f54f94d4785d9e9` — admin dashboard shows stats/messages.
+- `b9b68d401ce0a6661f169064a1fee4e5ca441f19` — updated admin styling.
+- `d601e6925718e5d8c59394682da05ff25e4581a0` — DB functions for Telegram/SOCKS5 settings.
+- `966c3cf531c61d13c300bb584b3cb50453c56a7c` — backend API for Telegram/SOCKS5 settings.
+- `c1169032ee0809fcc0f52f8e7d1b8cdfd4c1f375` — proxy config validation endpoint.
+- `1c644e1df7ebd5fb88e92fb3f6360f86355aac04` — Telegram/SOCKS5 form in admin.
+- `53fad336d3013b9f1fc1e25fdac4149956dc356b` — styles for Telegram/SOCKS5 form.
+- `9999139ab5c1cf227187d6b596caea8e2c0e7f32` — fixed auto-refresh wiping SOCKS5 form.
+- `760e85e342fd1c08e9a80de6eb6429fca17ec3ac` — added backend dependencies for Telegram/SOCKS5 bridge.
+- `5c6da6582e9d7077c4d7fe504b9731f853058072` — operators and operator messages DB functions.
+- `72edf824e0d7ebf92dfc27dfc8a956d2d927448c` — added runtime Telegram bridge file.
+- `47096dd0de601448a2c7f9ba1d5ac724f3bd7b69` — connected Telegram bridge to backend runtime.
+- `b22381061236a3a9568a5a906375f73dcbe16f87` — restartable Telegram bridge.
+- `27e94c96533b2955325d1d7e407f53d98bd0e81b` — restart endpoint and attempted auto-restart after settings save.
+- `8632c577a8b798bd7c5480998156919988affccb` — separated settings save from bridge restart to avoid timeout wiping UI state.
+- `4b46aabc8210158f97c3c6e9274b8f703f7a8aa2` — changed Telegram SOCKS agent to `socks5h://`.
+
+## Deployment/update commands
+
+Backend update:
+
+```bash
+cd /opt/ws-chat/source
+git pull --ff-only origin main
+cd backend
+npm install
+pm2 restart wschat-backend --update-env
+```
+
+Hard reset if server is behind or files are missing:
+
+```bash
+cd /opt/ws-chat/source
+git fetch origin main
+git reset --hard origin/main
+git clean -fd
+cd backend
+npm install
+pm2 delete wschat-backend
+pm2 start src/server.js --name wschat-backend --update-env
+pm2 save
+```
+
+Admin/widget build and publish:
+
+```bash
+cd /opt/ws-chat/source
+npm install
+npm run build
+rsync -av --delete widget/dist/ /var/www/widget_stack_usr/data/www/widget.stackworks.ru/
+rsync -av --delete admin-panel/dist/ /var/www/widget_stack_usr/data/www/widget.stackworks.ru/admin/
+```
+
+Health check:
+
+```bash
+curl -s http://127.0.0.1:3000/health | jq
+```
+
+Logs:
+
+```bash
+pm2 logs wschat-backend --lines 100
 ```
 
 ## FastPanel safety rules
 
 Never from project scripts:
 
-- edit `/etc/nginx/nginx.conf`
-- overwrite FastPanel vhost configs
-- run broad `systemctl restart nginx`
-- install packages that replace FastPanel web stack
-- run frontend/backend as root beyond the current root-based MVP install model
-- bind project services directly to ports 80/443
-- delete parent `/var/www` directories
-
-Static deployment should copy files only into exact domain webroot directories.
-
-Use rsync carefully:
-
-```bash
-rsync -av --delete widget/dist/ /var/www/widget_stack_usr/data/www/widget.stackworks.ru/
-rsync -av --delete admin-panel/dist/ /var/www/widget_stack_usr/data/www/widget.stackworks.ru/admin/
-```
-
-Never run `rsync --delete` against `/var/www` or parent folders.
-
-## Old Raspberry Pi attempt archive
-
-Raspberry Pi was originally planned as backend host but was removed from MVP.
-
-Issues encountered:
-
-- Raspberry Pi 3B with 32-bit OS: NodeSource does not support `armhf`.
-- Raspberry Pi 3B with 32-bit OS: `node -v` and `npm -v` returned `Segmentation fault` after attempted setup.
-- 32-bit install also showed dpkg metadata corruption.
-- Raspberry Pi 3B with 64-bit OS: NodeSource arm64 installed but `node -v` and `npm -v` returned `Illegal instruction`.
-- Later apt/dpkg showed corrupted `.deb` archives and corrupted `/var/lib/dpkg/diversions`.
-
-Conclusion:
-
-```text
-Do not use Raspberry Pi 3B for MVP backend.
-Use VPS-only deployment.
-```
-
-## Current repository structure
-
-```text
-.
-├── .gitignore
-├── .sw
-├── README.md
-├── package.json
-├── backend/
-│   ├── .env.example
-│   ├── package.json
-│   └── src/
-│       ├── config.js
-│       ├── db.js
-│       └── server.js
-├── admin-panel/
-│   ├── index.html
-│   ├── package.json
-│   ├── vite.config.js
-│   └── src/
-│       ├── main.jsx
-│       └── styles.css
-├── widget/
-│   ├── index.html
-│   ├── package.json
-│   └── src/
-│       └── widget.js
-├── deploy/
-│   ├── deploy-agent/
-│   └── vps/
-│       ├── .env.example
-│       ├── bootstrap.sh
-│       └── install.sh
-└── docs/
-    ├── FASTPANEL.md
-    ├── FASTPANEL_MANUAL_FRONTEND.md
-    ├── INSTALL.md
-    ├── RASPBERRY_PI.md
-    ├── UPDATE_BUNDLE.md
-    └── VPS_ONLY_INSTALL.md
-```
-
-## Implemented so far
-
-### VPS interactive installer
-
-Added `deploy/vps/install.sh`.
-
-It is an interactive root installer with progress and error logging.
-
-Features:
-
-- shows current step `[01/13]` style;
-- writes log file to `/tmp/wschat-install-YYYYMMDD-HHMMSS.log`;
-- saves primary settings to `/opt/ws-chat/install-state.env`;
-- on repeated runs, can reuse saved settings;
-- supports `--yes` to use saved settings without questions;
-- supports `--reset` to ask settings again;
-- asks for project path, widget/admin domain, API domain, FastPanel widget webroot, Telegram token, JWT secret;
-- validates FastPanel webroot path shape;
-- installs base packages;
-- installs Node.js 20 via NodeSource;
-- installs PM2;
-- creates `/opt/ws-chat` directories;
-- clones/updates repo;
-- installs npm dependencies;
-- writes `backend/.env`;
-- writes `/opt/ws-chat/install-state.env`;
-- starts/restarts PM2 process `wschat-backend`;
-- checks backend health at `http://127.0.0.1:3000/health`;
-- builds admin and widget;
-- publishes widget files into widget webroot and admin files into `/admin/`;
-- prints FastPanel reverse proxy instructions for `api.stackworks.ru`.
-
-Installer does not create domains or edit FastPanel configs.
-
-Run on VPS as root:
-
-```bash
-cd /opt/ws-chat/source
-bash deploy/vps/install.sh
-```
-
-Use saved settings without questions:
-
-```bash
-cd /opt/ws-chat/source
-bash deploy/vps/install.sh --yes
-```
-
-Reset settings:
-
-```bash
-cd /opt/ws-chat/source
-bash deploy/vps/install.sh --reset
-```
-
-### Root workspace
-
-- npm workspaces configured.
-- Root package renamed from `raspi-telegram-live-chat` to `wschat`.
-- Workspace package names renamed to `@wschat/*`.
-- Root scripts:
-  - `dev:backend`
-  - `dev:admin`
-  - `build:admin`
-  - `build:widget`
-  - `build`
-  - `deploy:frontend`
-
-### Backend
-
-Stack:
-
-- Node.js
-- Fastify
-- @fastify/cors
-- @fastify/rate-limit
-- @fastify/websocket
-- better-sqlite3
-- SQLite
-- nanoid
-- telegraf dependency already added but Telegram bridge not implemented yet
-
-Current endpoints:
-
-```text
-GET  /health
-GET  /api/config/public
-GET  /api/admin/stats
-GET  /api/admin/messages?limit=50
-POST /api/widget/message
-GET  /ws
-```
-
-For VPS-only architecture, backend env should use:
-
-```env
-APP_ENV=production
-APP_HOST=127.0.0.1
-APP_PORT=3000
-PUBLIC_API_URL=https://api.stackworks.ru
-PUBLIC_WS_URL=wss://api.stackworks.ru/ws
-DATABASE_PATH=/opt/ws-chat/data/chat.sqlite
-ADMIN_ORIGIN=https://widget.stackworks.ru
-WIDGET_ORIGIN=https://widget.stackworks.ru
-ADMIN_BASE_PATH=/admin
-```
-
-Backend health service name was renamed from `raspi-chat-backend` to `wschat-backend` in commit `ac14400b2eec875231f6300b7a48e8940cf73996`.
-
-### Admin panel
-
-React/Vite shell exists.
-
-It shows:
-
-- project dashboard;
-- API health check;
-- FastPanel-safe deployment note;
-- SOCKS5 note.
-
-Admin panel is served under:
-
-```text
-https://widget.stackworks.ru/admin/
-```
-
-Added `admin-panel/vite.config.js` with:
-
-```js
-base: '/admin/'
-```
-
-This fixed the white page caused by assets loading from `/assets/...` instead of `/admin/assets/...`.
-
-Admin API fallback was fixed from `http://localhost:3000` to `https://api.stackworks.ru` in commit `3e956e5c2ab65fe563f6c5d71bb2d032cbf8bcad`.
-
-Admin HTML title was changed from `Raspi Chat Admin` to `WSChat Admin` in commit `e5cac5ef34287931f7661bc26dcf739cdf9e7f90`.
-
-### Widget
-
-Vanilla JS widget shell exists.
-
-It:
-
-- creates chat button;
-- opens chat panel;
-- creates visitorId in localStorage;
-- sends messages to backend endpoint.
-
-Current embed example:
-
-```html
-<script
-  src="https://widget.stackworks.ru/widget.js"
-  data-site-id="site_default"
-  data-api-url="https://api.stackworks.ru">
-</script>
-```
-
-Need to ensure production Vite build emits stable `widget.js` file.
-
-### Deploy agent
-
-FastPanel-safe deploy script exists:
-
-```text
-deploy/deploy-agent/src/deploy-frontend.js
-```
-
-It currently focuses on frontend publishing and needs to be updated for current single-webroot widget/admin deployment:
-
-- git fetch/pull;
-- npm ci/install;
-- builds admin-panel;
-- builds widget;
-- validates FastPanel webroot path;
-- rsyncs widget dist to widget webroot;
-- rsyncs admin dist to widget webroot `/admin/`;
-- does not touch FastPanel configs.
-
-Need to extend deployment process for VPS-only backend:
-
-- install backend deps;
-- keep `/opt/ws-chat/data` persistent;
-- restart PM2 process `wschat-backend`;
-- never expose backend on public port.
-
-Important env variable:
-
-```env
-FASTPANEL_SAFE_MODE=true
-```
-
-## Existing docs
-
-- `docs/VPS_ONLY_INSTALL.md`: current VPS-only install guide, needs final cleanup for widget/admin same-domain scheme.
-- `docs/INSTALL.md`: old full install guide for VPS + Raspberry Pi; deprecated.
-- `docs/FASTPANEL.md`: FastPanel-safe deployment guide; needs update for backend on same VPS.
-- `docs/FASTPANEL_MANUAL_FRONTEND.md`: manual frontend installation through FastPanel.
-- `docs/RASPBERRY_PI.md`: now historical/optional, not MVP.
-- `docs/UPDATE_BUNDLE.md`: future update bundle workflow; needs update for backend on VPS and `/opt/ws-chat`.
-
-## Important previous commits
-
-- Initial project spec: `aea8a9f49089ffd6b5a8ace365fc4eaa8c4ea154`
-- Frontend deployment requirement: `1a914b9e546f6a0d9b60be6f8cf80858b1d25a75`
-- FastPanel-safe requirement: `80f0e77e76f6a0b79e875fed5baf2243fbe0a11e`
-- Initial project skeleton: multiple commits after that
-- Install guide: `4f86690a0118f69243ce4da9b515aaace5b20017`
-- Manual FastPanel frontend guide: `ba08112dc628fd276a2f8eade63145b32aa42c95`
-- Update bundle workflow: `b1fa5ead43f33e80c7208b98bcea6e0fa68d5682`
-- Raspberry armhf bootstrap fix: `fbe84c8b16a51cdd4931ecf0b1e0fa8654edec6a`
-- Architecture switched to VPS-only after Raspberry issues: `28b0ca37c4032633811cce4dc096d1c714c5d5a2`
-- Backend health renamed to WSChat: `ac14400b2eec875231f6300b7a48e8940cf73996`
-- Backend .env absolute loading fix: `4f6339b37c0bbdfa11c12cacb5d12265fb5dd59b`
-- Admin Vite base `/admin/` added: `9943376645882eeb3cdc372b5292c72519e005b2`
-- Admin API fallback fixed: `3e956e5c2ab65fe563f6c5d71bb2d032cbf8bcad`
-- Admin HTML title renamed to WSChat: `e5cac5ef34287931f7661bc26dcf739cdf9e7f90`
-- SQLite DB layer added: `502d214eac515863037d8f2bc6f09161dc19624e`
-- Widget message persistence added: `bb6dcb106948f83ec588b03777c3ce263509e80a`
-
-## Next development steps
-
-1. Pull latest backend persistence changes on VPS.
-2. Restart PM2 and verify SQLite DB creation at `/opt/ws-chat/data/chat.sqlite`.
-3. Test POST `/api/widget/message` with `siteId: site_default`.
-4. Test GET `/api/admin/messages` and `/api/admin/stats`.
-5. Update admin UI to show message/stats cards.
-6. Update deploy-agent for widget/admin same webroot and backend restart.
-7. Fix widget production build so it outputs stable `widget.js`.
-8. Implement Telegram bot bridge:
-   - send website messages to allowed operators
-   - map Telegram replies to conversations
-   - send replies back to widget via WebSocket
+- edit `/etc/nginx/nginx.conf`;
+- overwrite FastPanel vhost configs;
+- run broad `systemctl restart nginx`;
+- install packages that replace FastPanel web stack;
+- bind project services directly to ports 80/443;
+- delete parent `/var/www` directories;
+- run `rsync --delete` against `/var/www` or parent directories.
+
+Only copy static files into exact domain webroot directories.
+
+## Current next steps
+
+1. Pull latest code with `socks5h://` fix on VPS.
+2. Restart backend with PM2.
+3. Check `/health` and confirm `telegram.running: true`.
+4. In Telegram, send `/start` to the bot and confirm operator registration.
+5. Send a message from widget and confirm it arrives to Telegram operator.
+6. Implement delivery of Telegram operator replies back to widget through WebSocket.
+7. Add admin UI bridge status/restart button.
+8. Add admin list of Telegram operators.
 9. Add admin auth.
-10. Add admin CRUD:
-   - sites
-   - operators
-   - operator-site permissions
-   - Telegram settings
-   - SOCKS5 settings
-11. Add origin/domain validation:
-   - `site_id + Origin` must match configured site.
-12. Add manual update section in admin panel.
-13. Add update bundle generator and apply script.
-14. Prepare Android-ready API later.
+10. Add site CRUD and operator-site permissions.
+11. Fix production widget build to emit stable `widget.js`.
+12. Add origin/domain validation: `site_id + Origin` must match configured site.
+13. Add updater bundle workflow.
+14. Continue updating this `.sw` after each meaningful change.
 
 ## User preferences and constraints
 
 - User wants practical development, not only planning.
 - User wants all work in GitHub repository `viktor138irk/chat`.
-- User wants to be able to resume development in a new dialog using this `.sw` file.
+- User wants to resume development in new dialogs using this `.sw` file.
+- User explicitly wants `.sw` continuously updated.
 - User prefers not to risk breaking FastPanel.
 - User wants manual control over domains in FastPanel.
 - User wants future auto-update file/bundle workflow.
 - User changed architecture to VPS-only after Raspberry issues.
-- User named the system WSChat and chose `/opt/ws-chat` as the project path.
 - VPS currently uses root user by default, so MVP installation can run as root.
 - Widget and admin must live in one FastPanel site: widget at `/`, admin at `/admin/`.
 
 ## How to continue in a new chat
 
-Open this file first. Then continue from "Next development steps".
+Open `.sw` first, then continue from `Current next steps`.
 
-Recommended next task:
+Recommended immediate task:
 
 ```text
-Pull latest changes on VPS, test SQLite message persistence, then show messages/stats in admin UI.
+Pull latest code on VPS, restart backend, verify Telegram bridge with socks5h proxy, then test /start.
 ```
