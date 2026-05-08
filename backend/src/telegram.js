@@ -54,7 +54,29 @@ export function getTelegramBridgeStatus() {
   };
 }
 
+export async function stopTelegramBridge(reason = 'restart') {
+  if (bot) {
+    try {
+      await bot.stop(reason);
+    } catch {
+      // Telegraf can throw if polling was never started. Safe to ignore on restart.
+    }
+  }
+
+  bot = null;
+  botStatus = {
+    ...botStatus,
+    running: false,
+    error: '',
+    startedAt: null
+  };
+
+  return getTelegramBridgeStatus();
+}
+
 export async function startTelegramBridge({ logger } = {}) {
+  await stopTelegramBridge('restart');
+
   const settings = getTelegramSettings({ revealSecrets: true });
   const token = settings.botToken;
 
@@ -136,7 +158,7 @@ export async function startTelegramBridge({ logger } = {}) {
     });
 
     const me = await bot.telegram.getMe();
-    await bot.launch();
+    await bot.launch({ dropPendingUpdates: true });
 
     botStatus = {
       enabled: true,
@@ -149,9 +171,6 @@ export async function startTelegramBridge({ logger } = {}) {
 
     logger?.info?.({ username: botStatus.username, proxyEnabled: botStatus.proxyEnabled }, 'Telegram bridge started');
 
-    process.once('SIGINT', () => bot?.stop('SIGINT'));
-    process.once('SIGTERM', () => bot?.stop('SIGTERM'));
-
     return botStatus;
   } catch (error) {
     botStatus = {
@@ -162,6 +181,11 @@ export async function startTelegramBridge({ logger } = {}) {
     logger?.error?.(error, 'Telegram bridge failed to start');
     return botStatus;
   }
+}
+
+export async function restartTelegramBridge({ logger } = {}) {
+  await stopTelegramBridge('manual restart');
+  return startTelegramBridge({ logger });
 }
 
 export async function notifyOperatorsAboutVisitorMessage({ site, visitor, conversation, message, logger } = {}) {
