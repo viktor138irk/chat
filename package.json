@@ -1,8 +1,8 @@
 {
-  "name": "raspi-telegram-live-chat",
+  "name": "wschat",
   "version": "0.1.0",
   "private": true,
-  "description": "Self-hosted live chat with Raspberry Pi backend, Telegram operators, FastPanel-safe frontend deployment, and embeddable widget.",
+  "description": "WSChat: self-hosted live chat on VPS with Telegram operators, FastPanel-safe deployment, embeddable widget, and admin panel.",
   "workspaces": [
     "backend",
     "admin-panel",
