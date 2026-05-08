@@ -1,5 +1,5 @@
 {
-  "name": "@raspi-chat/deploy-agent",
+  "name": "@wschat/deploy-agent",
   "version": "0.1.0",
   "private": true,
   "type": "module",
