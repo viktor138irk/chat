@@ -31,7 +31,7 @@ const clients = new Map();
 
 app.get('/health', async () => ({
   ok: true,
-  service: 'raspi-chat-backend',
+  service: 'wschat-backend',
   env: config.app.env
 }));
 
