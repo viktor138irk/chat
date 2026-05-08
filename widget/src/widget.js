@@ -14,35 +14,36 @@
   const style = document.createElement('style');
   style.textContent = `
     .raspi-chat-button{position:fixed;right:18px;bottom:18px;z-index:2147483000;border:0;border-radius:999px;background:#172033;color:#fff;padding:13px 17px;font:700 14px system-ui;box-shadow:0 14px 35px rgba(0,0,0,.18);cursor:pointer;line-height:1}
-    .raspi-chat-panel{position:fixed;right:18px;bottom:72px;z-index:2147483000;width:360px;max-width:calc(100vw - 32px);height:460px;max-height:calc(100vh - 96px);display:none;flex-direction:column;border-radius:22px;overflow:hidden;background:#fff;box-shadow:0 22px 70px rgba(0,0,0,.22);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .raspi-chat-panel{position:fixed;right:18px;bottom:72px;z-index:2147483000;width:360px;max-width:calc(100vw - 32px);height:420px;max-height:calc(100dvh - 92px);display:none;flex-direction:column;border-radius:22px;overflow:hidden;background:#fff;box-shadow:0 22px 70px rgba(0,0,0,.22);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
     .raspi-chat-panel.open{display:flex}
-    .raspi-chat-header{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:54px;padding:12px 14px 12px 16px;background:#172033;color:#fff;font-weight:800;line-height:1.2}
+    .raspi-chat-header{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:54px;padding:12px 14px 12px 16px;background:#172033;color:#fff;font-weight:800;line-height:1.2;flex:0 0 auto}
     .raspi-chat-title{display:flex;flex-direction:column;gap:2px;min-width:0}
     .raspi-chat-title strong{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .raspi-chat-title span{font-size:11px;font-weight:600;color:rgba(255,255,255,.68)}
     .raspi-chat-close{width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:12px;background:rgba(255,255,255,.1);color:#fff;font:800 22px/1 system-ui;cursor:pointer;flex:0 0 auto}
     .raspi-chat-close:hover{background:rgba(255,255,255,.16)}
-    .raspi-chat-messages{flex:1;padding:14px;overflow:auto;background:#f4f6fb;color:#172033;font-size:14px;overscroll-behavior:contain}
+    .raspi-chat-messages{flex:1 1 auto;min-height:0;padding:14px;overflow:auto;background:#f4f6fb;color:#172033;font-size:14px;overscroll-behavior:contain}
     .raspi-chat-message{margin:0 0 10px;padding:10px 12px;border-radius:14px;background:#fff;line-height:1.45;word-wrap:break-word;white-space:pre-wrap}
     .raspi-chat-message.operator{background:#dfe8ff;margin-left:18px}
     .raspi-chat-message.visitor{background:#fff;margin-right:18px}
     .raspi-chat-system{opacity:.7;font-size:12px;padding:4px 2px}
-    .raspi-chat-form{display:flex;gap:8px;padding:10px;border-top:1px solid #e7ebf3;background:#fff}
+    .raspi-chat-form{display:flex;gap:8px;padding:10px;border-top:1px solid #e7ebf3;background:#fff;flex:0 0 auto}
     .raspi-chat-input{flex:1;min-width:0;border:1px solid #d7deea;border-radius:12px;padding:10px;font:14px system-ui;outline:none}
     .raspi-chat-input:focus{border-color:#4f6bff;box-shadow:0 0 0 3px rgba(79,107,255,.12)}
     .raspi-chat-send{border:0;border-radius:12px;background:#4f6bff;color:#fff;min-width:44px;padding:0 14px;font-weight:800;cursor:pointer}
     @media (max-width: 560px){
       .raspi-chat-button{right:14px;bottom:14px;padding:13px 16px}
-      .raspi-chat-panel{right:10px;left:10px;bottom:74px;width:auto;max-width:none;height:min(560px,calc(100vh - 92px));max-height:calc(100vh - 92px);border-radius:20px}
+      .raspi-chat-panel{right:10px;left:10px;bottom:74px;width:auto;max-width:none;height:auto;min-height:330px;max-height:calc(100dvh - 92px);border-radius:20px}
       .raspi-chat-header{min-height:50px;padding:10px 12px 10px 14px}
       .raspi-chat-close{width:38px;height:38px;border-radius:13px}
-      .raspi-chat-messages{padding:12px;font-size:13px}
+      .raspi-chat-messages{padding:12px;font-size:13px;min-height:180px;max-height:calc(100dvh - 220px)}
       .raspi-chat-message.operator{margin-left:10px}
       .raspi-chat-message.visitor{margin-right:10px}
       .raspi-chat-form{padding:9px}
     }
     @media (max-height: 560px){
       .raspi-chat-panel{top:10px;bottom:10px;height:auto;max-height:none}
+      .raspi-chat-messages{min-height:0;max-height:none}
     }
   `;
   document.head.appendChild(style);
