@@ -10,6 +10,7 @@ import {
 } from './db.js';
 
 let bot = null;
+let operatorMessageNotifier = null;
 let botStatus = {
   enabled: false,
   running: false,
@@ -45,6 +46,10 @@ function buildTelegramOptions(settings) {
       agent
     }
   };
+}
+
+export function setOperatorMessageNotifier(callback) {
+  operatorMessageNotifier = callback;
 }
 
 export function getTelegramBridgeStatus() {
@@ -146,13 +151,17 @@ export async function startTelegramBridge({ logger } = {}) {
         return;
       }
 
-      createOperatorMessage({
+      const message = createOperatorMessage({
         conversationId,
         siteId: conversation.site_id,
         operatorId: operator.id,
         body: text,
         telegramMessageId: String(ctx.message.message_id)
       });
+
+      if (operatorMessageNotifier) {
+        operatorMessageNotifier({ conversation, message, operator });
+      }
 
       await ctx.reply(`Answer saved for conversation ${conversationId}.`);
     });
