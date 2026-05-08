@@ -1,6 +1,6 @@
 # Development state snapshot
 
-Project: Raspi Telegram Live Chat
+Project: VPS Telegram Live Chat
 Repository: https://github.com/viktor138irk/chat
 Owner: viktor138irk
 Default branch: main
@@ -13,143 +13,62 @@ Build a self-hosted live chat system similar to Jivo, but with Telegram as the o
 
 Website visitors use an embeddable widget. Messages go to selected Telegram operators. Operators reply in Telegram, and replies return to the website widget.
 
-## Main architecture
+## Architecture decision update
+
+The architecture was changed from Raspberry Pi backend to VPS-only deployment.
+
+Reason:
+
+- Raspberry Pi 3B caused repeated low-level system issues.
+- 32-bit OS had NodeSource `armhf` incompatibility.
+- 64-bit OS with NodeSource arm64 produced `Illegal instruction` on Node.js.
+- APT/DPKG then showed corrupted archives and `/var/lib/dpkg/diversions` issues.
+- Continuing on Raspberry Pi would waste time and increase operational risk.
+
+New decision:
+
+```text
+VPS with FastPanel runs everything:
+- backend API
+- WebSocket
+- Telegram bot
+- SQLite database initially
+- admin panel static files
+- widget static files
+```
+
+Raspberry Pi is removed from MVP architecture. It can be revisited later as an optional edge node, but not for the first production version.
+
+## Main VPS-only architecture
 
 ```text
 Website with embedded widget
-  -> widget.example.ru static widget.js from VPS/FastPanel
+  -> widget.example.ru static widget.js on VPS/FastPanel
   -> api.example.ru public HTTPS endpoint on VPS/FastPanel
-  -> VPS reverse proxy
-  -> WireGuard tunnel
-  -> Raspberry Pi 3B backend at home
-  -> SQLite + Telegram bot
+  -> local reverse proxy to Node.js backend on VPS
+  -> SQLite on VPS
+  -> Telegram bot API / optional SOCKS5
+  -> Telegram operators
+
+Admin user
+  -> admin.example.ru static admin panel on VPS/FastPanel
+  -> api.example.ru backend on same VPS
 ```
 
 ## Deployment decisions
 
 - Cloudflare must not be used because of availability issues in Russia.
-- Frontend is hosted on VPS with FastPanel.
+- Everything runs on VPS with FastPanel.
 - FastPanel must manage domains, SSL, and web server configs manually.
 - Project scripts must not create domains or edit global FastPanel configs.
-- Raspberry Pi stays at home and should not expose public ports.
-- VPS is the only public entry point.
-- VPS connects to Raspberry Pi through WireGuard.
-- api.example.ru is only a reverse proxy, not a static site.
-- admin.example.ru serves the admin panel static files.
-- widget.example.ru serves the embeddable widget static files.
-
-## Raspberry Pi target
-
-Current Raspberry status:
-
-- User reinstalled Raspberry Pi with 64-bit OS after armhf/Node.js issues.
-- User connected by SSH successfully.
-- NodeSource arm64 Node.js on Raspberry Pi 3B returned `Illegal instruction` for both `node -v` and `npm -v`.
-- Attempt to install Debian/Raspberry `nodejs npm` then showed corrupted downloaded `.deb` files in `/var/cache/apt/archives` and corrupted `/var/lib/dpkg/diversions`.
-- Next setup path: repair `/var/lib/dpkg/diversions`, clear apt cache, remove NodeSource, run `dpkg --configure -a`, then install distro `nodejs npm`.
-
-Recommended device/runtime:
-
-- Raspberry Pi 3 Model B
-- Raspberry Pi OS Lite 64-bit
-- Prefer distro Node.js from Raspberry Pi/Debian repo on Pi 3B if NodeSource arm64 gives `Illegal instruction`
-- SQLite
-- PM2
-- WireGuard client
-
-Do not expose Raspberry Pi directly to the internet.
-
-Backend should listen on port 3000 and be reachable only through WireGuard from VPS.
-
-### Current Raspberry 64-bit Node.js / APT issue
-
-On Raspberry Pi 3B with 64-bit OS, NodeSource-installed Node.js returned:
-
-```text
-node -v -> Illegal instruction
-npm -v  -> Illegal instruction
-```
-
-Likely cause: NodeSource arm64 binary uses CPU instructions not available on Raspberry Pi 3B Cortex-A53.
-
-Then APT/DKPG showed corrupted archives and corrupted diversions file:
-
-```text
-E: Invalid archive signature
-E: Internal error, could not locate member control.tar{.zst,.lz4,.gz,.xz,.bz2,.lzma,}
-E: Prior errors apply to /var/cache/apt/archives/*.deb
-dpkg: unrecoverable fatal error, aborting:
- too-long line or missing newline in '/var/lib/dpkg/diversions'
-Error: Sub-process /usr/bin/dpkg returned an error code (2)
-```
-
-Recommended recovery sequence:
-
-```bash
-sudo cp /var/lib/dpkg/diversions /var/lib/dpkg/diversions.bak.$(date +%Y%m%d-%H%M%S) 2>/dev/null || true
-sudo sed -i -e '$a\' /var/lib/dpkg/diversions
-sudo dpkg --configure -a
-sudo rm -f /var/cache/apt/archives/*.deb
-sudo rm -f /var/cache/apt/archives/partial/*.deb
-sudo apt clean
-sudo rm -f /etc/apt/sources.list.d/nodesource.list
-sudo rm -f /etc/apt/sources.list.d/nodesource.sources
-sudo rm -f /etc/apt/sources.list.d/node*.list
-sudo rm -f /etc/apt/sources.list.d/node*.sources
-sudo rm -f /etc/apt/keyrings/nodesource.gpg
-sudo rm -f /usr/share/keyrings/nodesource.gpg
-sudo apt update
-sudo apt --fix-broken install
-sudo apt install -y nodejs npm
-node -v
-npm -v
-```
-
-If `/var/lib/dpkg/diversions` remains corrupted after appending newline, inspect and repair manually:
-
-```bash
-sudo cp /var/lib/dpkg/diversions /root/diversions.bad
-sudo tail -n 20 /var/lib/dpkg/diversions
-sudo python3 - <<'PY'
-from pathlib import Path
-p = Path('/var/lib/dpkg/diversions')
-data = p.read_bytes()
-if data and not data.endswith(b'\n'):
-    p.write_bytes(data + b'\n')
-PY
-sudo dpkg --configure -a
-```
-
-If the fresh 64-bit OS continues corrupting apt archives, suspect SD card/power/network image issue before continuing development.
-
-### Old Raspberry 32-bit Node.js issue
-
-On previous Raspberry Pi OS 32-bit install, architecture was `armhf`. NodeSource setup failed with:
-
-```text
-Unsupported architecture: armhf. Only amd64, arm64 are supported.
-```
-
-After attempted install, `node -v` and `npm -v` returned:
-
-```text
-Segmentation fault
-```
-
-Then `apt purge` failed because dpkg package metadata was corrupted:
-
-```text
-dpkg: unrecoverable fatal error, aborting:
- files list file for package 'node-lodash-packages' is missing final newline
-Error: Sub-process /usr/bin/dpkg returned an error code (2)
-```
-
-Action taken:
-
-- Updated `deploy/raspberry/bootstrap.sh` in commit `fbe84c8b16a51cdd4931ecf0b1e0fa8654edec6a`.
-- Script detects `dpkg --print-architecture`.
-- For `armhf`, it installs `nodejs npm` from Raspberry Pi/Debian apt repo instead of NodeSource.
-- For `arm64` and `amd64`, it can use NodeSource, but this may fail on Raspberry Pi 3B with `Illegal instruction`.
+- Backend runs locally on VPS, preferably bound to `127.0.0.1:3000`.
+- `api.example.ru` is a reverse proxy to `http://127.0.0.1:3000`.
+- `admin.example.ru` serves admin panel static files.
+- `widget.example.ru` serves embeddable widget static files.
+- SQLite database initially lives on VPS under project data directory.
+- PostgreSQL can be introduced later if needed.
+- WireGuard is no longer required for MVP.
+- No Raspberry home networking or port forwarding is required.
 
 ## VPS/FastPanel target
 
@@ -160,7 +79,7 @@ Recommended subdomains:
 ```text
 admin.example.ru   -> static admin panel
 widget.example.ru  -> static widget
-api.example.ru     -> reverse proxy to Raspberry Pi backend
+api.example.ru     -> reverse proxy to local backend on VPS
 ```
 
 DNS A-records for all three point to the VPS IP.
@@ -172,26 +91,35 @@ FastPanel webroots are expected to look like:
 /var/www/<fastpanel-user>/data/www/widget.example.ru
 ```
 
-api.example.ru may have a webroot created by FastPanel, but project files must not be published there. It should proxy to:
+The backend source and runtime should live outside public webroots:
 
 ```text
-http://10.8.0.2:3000
+/opt/raspi-chat/source
+/opt/raspi-chat/data
+/opt/raspi-chat/logs
+/opt/raspi-chat/backups
+```
+
+`api.example.ru` may have a webroot created by FastPanel, but project files must not be published there. It should proxy to:
+
+```text
+http://127.0.0.1:3000
 ```
 
 ## Ports
 
-Home router / Raspberry Pi:
-
-- No port forwarding required.
-- Backend port 3000 should be available only inside WireGuard.
-- SSH may be available only in local LAN if needed.
-
-VPS:
+VPS public ports:
 
 - 80/tcp for HTTP/Let's Encrypt
 - 443/tcp for HTTPS admin/widget/api
-- 51820/udp for WireGuard
 - SSH port, usually 22/tcp or custom
+
+Backend port:
+
+- Node.js backend listens on `127.0.0.1:3000` only.
+- Do not expose port 3000 publicly.
+
+No WireGuard port is required for MVP.
 
 ## SOCKS5 requirement
 
@@ -215,16 +143,16 @@ Admin panel should eventually expose:
 - password
 - test connection button
 
-## Frontend update decision
+## Frontend and backend update decision
 
-The user wants manual-safe frontend installation on VPS first, to avoid breaking FastPanel.
+The user wants manual-safe installation on VPS first, to avoid breaking FastPanel.
 
 Future update mechanism:
 
 - Assistant can prepare an update bundle file.
 - User uploads it to VPS.
 - Auto-updater applies changes safely.
-- Updates can cover admin, widget, and backend/API instructions.
+- Updates can cover admin, widget, backend/API, docs, and config templates.
 
 Recommended project directory on VPS:
 
@@ -235,6 +163,7 @@ Recommended project directory on VPS:
   backups/
   logs/
   build/
+  data/
 ```
 
 FastPanel owns public directories:
@@ -242,6 +171,13 @@ FastPanel owns public directories:
 ```text
 /var/www/<fastpanel-user>/data/www/admin.example.ru
 /var/www/<fastpanel-user>/data/www/widget.example.ru
+```
+
+Backend should be managed by PM2:
+
+```text
+pm2 process: raspi-chat-backend
+entry: /opt/raspi-chat/source/backend/src/server.js
 ```
 
 ## FastPanel safety rules
@@ -252,8 +188,8 @@ Never from project scripts:
 - overwrite FastPanel vhost configs
 - run broad `systemctl restart nginx`
 - install packages that replace FastPanel web stack
-- run frontend as root
-- bind frontend services to ports 80/443
+- run frontend/backend as root
+- bind project services directly to ports 80/443
 - delete parent `/var/www` directories
 
 Static deployment should copy files only into exact domain webroots.
@@ -266,6 +202,25 @@ rsync -av --delete widget/dist/ /var/www/siteuser/data/www/widget.example.ru/
 ```
 
 Never run `rsync --delete` against `/var/www` or parent folders.
+
+## Old Raspberry Pi attempt archive
+
+Raspberry Pi was originally planned as backend host but was removed from MVP.
+
+Issues encountered:
+
+- Raspberry Pi 3B with 32-bit OS: NodeSource does not support `armhf`.
+- Raspberry Pi 3B with 32-bit OS: `node -v` and `npm -v` returned `Segmentation fault` after attempted setup.
+- 32-bit install also showed dpkg metadata corruption.
+- Raspberry Pi 3B with 64-bit OS: NodeSource arm64 installed but `node -v` and `npm -v` returned `Illegal instruction`.
+- Later apt/dpkg showed corrupted `.deb` archives and corrupted `/var/lib/dpkg/diversions`.
+
+Conclusion:
+
+```text
+Do not use Raspberry Pi 3B for MVP backend.
+Use VPS-only deployment.
+```
 
 ## Current repository structure
 
@@ -342,6 +297,16 @@ GET  /ws
 
 `/api/widget/message` currently validates basic fields and returns accepted. Persistence and Telegram forwarding are not implemented yet.
 
+For VPS-only architecture, backend env should use:
+
+```env
+APP_HOST=127.0.0.1
+APP_PORT=3000
+PUBLIC_API_URL=https://api.example.ru
+PUBLIC_WS_URL=wss://api.example.ru/ws
+DATABASE_PATH=/opt/raspi-chat/data/chat.sqlite
+```
+
 ### Admin panel
 
 React/Vite shell exists.
@@ -384,7 +349,7 @@ FastPanel-safe deploy script exists:
 deploy/deploy-agent/src/deploy-frontend.js
 ```
 
-It:
+It currently focuses on frontend publishing:
 
 - git fetch/pull
 - npm ci
@@ -394,7 +359,14 @@ It:
 - rsyncs dist files into admin/widget webroots
 - does not touch FastPanel configs
 
-Important env variable name fixed:
+Need to extend deployment process for VPS-only backend:
+
+- install backend deps
+- keep `/opt/raspi-chat/data` persistent
+- restart PM2 process `raspi-chat-backend`
+- never expose backend on public port
+
+Important env variable:
 
 ```env
 FASTPANEL_SAFE_MODE=true
@@ -402,11 +374,11 @@ FASTPANEL_SAFE_MODE=true
 
 ## Existing docs
 
-- `docs/INSTALL.md`: full install guide for VPS + Raspberry Pi.
-- `docs/FASTPANEL.md`: FastPanel-safe deployment guide.
+- `docs/INSTALL.md`: old full install guide for VPS + Raspberry Pi; needs rewrite for VPS-only.
+- `docs/FASTPANEL.md`: FastPanel-safe deployment guide; needs update for backend on same VPS.
 - `docs/FASTPANEL_MANUAL_FRONTEND.md`: manual frontend installation through FastPanel.
-- `docs/RASPBERRY_PI.md`: Raspberry Pi setup.
-- `docs/UPDATE_BUNDLE.md`: future update bundle workflow.
+- `docs/RASPBERRY_PI.md`: now historical/optional, not MVP.
+- `docs/UPDATE_BUNDLE.md`: future update bundle workflow; needs update for backend on VPS.
 
 ## Important previous commits
 
@@ -418,11 +390,22 @@ FASTPANEL_SAFE_MODE=true
 - Manual FastPanel frontend guide: `ba08112dc628fd276a2f8eade63145b32aa42c95`
 - Update bundle workflow: `b1fa5ead43f33e80c7208b98bcea6e0fa68d5682`
 - Raspberry armhf bootstrap fix: `fbe84c8b16a51cdd4931ecf0b1e0fa8654edec6a`
+- Architecture switched to VPS-only after Raspberry issues: current update
 
 ## Next development steps
 
-1. Fix widget production build so it outputs stable `widget.js`.
-2. Add SQLite database layer:
+1. Update docs to VPS-only architecture.
+2. Update `.env.example` for VPS-only defaults.
+3. Add VPS bootstrap/deploy script:
+   - install Node.js
+   - install PM2
+   - create `/opt/raspi-chat/data`
+   - prepare backend env
+   - build admin/widget
+   - publish static files safely
+   - start/restart backend with PM2
+4. Fix widget production build so it outputs stable `widget.js`.
+5. Add SQLite database layer:
    - sites
    - operators
    - site_operators
@@ -430,23 +413,23 @@ FASTPANEL_SAFE_MODE=true
    - conversations
    - messages
    - settings
-3. Persist widget messages.
-4. Implement Telegram bot bridge:
+6. Persist widget messages.
+7. Implement Telegram bot bridge:
    - send website messages to allowed operators
    - map Telegram replies to conversations
    - send replies back to widget via WebSocket
-5. Add admin auth.
-6. Add admin CRUD:
+8. Add admin auth.
+9. Add admin CRUD:
    - sites
    - operators
    - operator-site permissions
    - Telegram settings
    - SOCKS5 settings
-7. Add origin/domain validation:
+10. Add origin/domain validation:
    - `site_id + Origin` must match configured site.
-8. Add manual update section in admin panel.
-9. Add update bundle generator and apply script.
-10. Prepare Android-ready API later.
+11. Add manual update section in admin panel.
+12. Add update bundle generator and apply script.
+13. Prepare Android-ready API later.
 
 ## User preferences and constraints
 
@@ -456,7 +439,7 @@ FASTPANEL_SAFE_MODE=true
 - User prefers not to risk breaking FastPanel.
 - User wants manual control over domains in FastPanel.
 - User wants future auto-update file/bundle workflow.
-- User confirmed: `api.example.ru` or `pi.example.ru` is just proxied.
+- User changed architecture to VPS-only after Raspberry issues.
 
 ## How to continue in a new chat
 
@@ -465,5 +448,5 @@ Open this file first. Then continue from "Next development steps".
 Recommended next task:
 
 ```text
-Implement SQLite schema and message persistence in backend.
+Update project files/docs for VPS-only architecture, then implement SQLite schema and message persistence.
 ```
