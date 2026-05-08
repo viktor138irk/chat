@@ -96,6 +96,7 @@ export function migrate() {
   `);
 
   ensureDefaultSite();
+  ensureDefaultTelegramSettings();
 }
 
 export function ensureDefaultSite() {
@@ -108,6 +109,102 @@ export function ensureDefaultSite() {
   `).run('site_default', 'Default site', config.cors.widgetOrigin.replace(/^https?:\/\//, ''), 'site_default');
 
   return 'site_default';
+}
+
+function boolToSetting(value) {
+  return value ? 'true' : 'false';
+}
+
+function settingToBool(value) {
+  return ['1', 'true', 'yes', 'on'].includes(String(value || '').toLowerCase());
+}
+
+export function getSetting(key, fallback = '') {
+  const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
+  return row ? row.value : fallback;
+}
+
+export function setSetting(key, value) {
+  db.prepare(`
+    INSERT INTO settings (key, value, updated_at)
+    VALUES (?, ?, CURRENT_TIMESTAMP)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP
+  `).run(key, String(value ?? ''));
+}
+
+export function ensureDefaultTelegramSettings() {
+  const defaults = {
+    'telegram.bot_token': config.telegram.token,
+    'telegram.proxy.enabled': boolToSetting(config.telegram.proxy.enabled),
+    'telegram.proxy.type': config.telegram.proxy.type,
+    'telegram.proxy.host': config.telegram.proxy.host,
+    'telegram.proxy.port': String(config.telegram.proxy.port || 9050),
+    'telegram.proxy.username': config.telegram.proxy.username,
+    'telegram.proxy.password': config.telegram.proxy.password
+  };
+
+  for (const [key, value] of Object.entries(defaults)) {
+    const exists = db.prepare('SELECT key FROM settings WHERE key = ?').get(key);
+    if (!exists) setSetting(key, value);
+  }
+}
+
+export function getTelegramSettings({ revealSecrets = false } = {}) {
+  const token = getSetting('telegram.bot_token', config.telegram.token);
+  const password = getSetting('telegram.proxy.password', config.telegram.proxy.password);
+
+  return {
+    botToken: revealSecrets ? token : token ? '********' : '',
+    hasBotToken: Boolean(token),
+    proxy: {
+      enabled: settingToBool(getSetting('telegram.proxy.enabled', boolToSetting(config.telegram.proxy.enabled))),
+      type: getSetting('telegram.proxy.type', config.telegram.proxy.type) || 'socks5',
+      host: getSetting('telegram.proxy.host', config.telegram.proxy.host) || '127.0.0.1',
+      port: Number(getSetting('telegram.proxy.port', String(config.telegram.proxy.port || 9050)) || 9050),
+      username: getSetting('telegram.proxy.username', config.telegram.proxy.username),
+      password: revealSecrets ? password : password ? '********' : '',
+      hasPassword: Boolean(password)
+    }
+  };
+}
+
+export function updateTelegramSettings(payload = {}) {
+  const current = getTelegramSettings({ revealSecrets: true });
+  const proxy = payload.proxy || {};
+
+  if (Object.prototype.hasOwnProperty.call(payload, 'botToken') && payload.botToken !== '********') {
+    setSetting('telegram.bot_token', String(payload.botToken || '').trim());
+  }
+
+  if (Object.prototype.hasOwnProperty.call(proxy, 'enabled')) {
+    setSetting('telegram.proxy.enabled', boolToSetting(Boolean(proxy.enabled)));
+  }
+
+  if (Object.prototype.hasOwnProperty.call(proxy, 'type')) {
+    setSetting('telegram.proxy.type', String(proxy.type || 'socks5').trim().toLowerCase());
+  }
+
+  if (Object.prototype.hasOwnProperty.call(proxy, 'host')) {
+    setSetting('telegram.proxy.host', String(proxy.host || '').trim());
+  }
+
+  if (Object.prototype.hasOwnProperty.call(proxy, 'port')) {
+    const port = Number(proxy.port || current.proxy.port || 9050);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) {
+      throw new Error('proxy port must be between 1 and 65535');
+    }
+    setSetting('telegram.proxy.port', String(port));
+  }
+
+  if (Object.prototype.hasOwnProperty.call(proxy, 'username')) {
+    setSetting('telegram.proxy.username', String(proxy.username || '').trim());
+  }
+
+  if (Object.prototype.hasOwnProperty.call(proxy, 'password') && proxy.password !== '********') {
+    setSetting('telegram.proxy.password', String(proxy.password || ''));
+  }
+
+  return getTelegramSettings();
 }
 
 export function getSiteByWidgetKey(widgetKey) {
