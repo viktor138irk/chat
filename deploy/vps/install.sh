@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-# WSChat interactive VPS installer.
-# FastPanel domains/sites must be created manually in FastPanel UI.
+# Интерактивный установщик WSChat для VPS.
+# Домены и сайты FastPanel создаются вручную через интерфейс FastPanel.
 
 PROJECT_NAME="WSChat"
 DEFAULT_PROJECT_ROOT="/opt/ws-chat"
@@ -47,10 +47,6 @@ log() {
   printf "%s\n" "$*" | tee -a "$LOG_FILE"
 }
 
-info() {
-  printf "${BLUE}%s${NC}\n" "$*" | tee -a "$LOG_FILE"
-}
-
 ok() {
   printf "${GREEN}%s${NC}\n" "$*" | tee -a "$LOG_FILE"
 }
@@ -76,9 +72,9 @@ run() {
 on_error() {
   local exit_code=$?
   fail ""
-  fail "Installation failed on step ${STEP}/${TOTAL_STEPS}. Exit code: ${exit_code}"
-  fail "Log file: ${LOG_FILE}"
-  fail "Last task should be visible above. Fix the error and rerun installer."
+  fail "Установка остановлена на шаге ${STEP}/${TOTAL_STEPS}. Код ошибки: ${exit_code}"
+  fail "Файл лога: ${LOG_FILE}"
+  fail "Последняя выполняемая задача показана выше. Исправь ошибку и запусти установщик повторно."
   exit "$exit_code"
 }
 trap on_error ERR
@@ -113,7 +109,7 @@ generate_secret() {
 
 require_root() {
   if [[ "${EUID}" -ne 0 ]]; then
-    fail "Run as root: bash deploy/vps/install.sh"
+    fail "Запусти установщик от root: bash deploy/vps/install.sh"
     exit 1
   fi
 }
@@ -122,12 +118,12 @@ validate_fastpanel_path() {
   local label="$1"
   local path="$2"
   if [[ -z "$path" ]]; then
-    warn "$label webroot is empty. Static publishing will be skipped."
+    warn "$label webroot не указан. Публикация статики будет пропущена."
     return 0
   fi
   if [[ "$path" != /var/www/*/data/www/* ]]; then
-    fail "$label webroot must look like /var/www/<fastpanel-user>/data/www/<domain>"
-    fail "Got: $path"
+    fail "$label webroot должен выглядеть так: /var/www/<fastpanel-user>/data/www/<domain>"
+    fail "Получено: $path"
     return 1
   fi
 }
@@ -188,26 +184,26 @@ EOF
 
 print_header() {
   clear || true
-  printf "${BOLD}${BLUE}WSChat interactive VPS installer${NC}\n"
-  printf "FastPanel sites/domains are created manually. This installer will not edit FastPanel configs.\n"
-  printf "Log file: %s\n\n" "$LOG_FILE"
+  printf "${BOLD}${BLUE}Интерактивный установщик WSChat для VPS${NC}\n"
+  printf "Сайты и домены FastPanel создаются вручную. Установщик не меняет конфиги FastPanel.\n"
+  printf "Файл лога: %s\n\n" "$LOG_FILE"
 }
 
 print_summary() {
   cat <<EOF
 
-${BOLD}Configuration summary${NC}
-Project root:      ${PROJECT_ROOT}
-Source path:       ${SOURCE_PATH}
-Data path:         ${DATA_PATH}
-Admin domain:      ${ADMIN_DOMAIN}
-Widget domain:     ${WIDGET_DOMAIN}
-API domain:        ${API_DOMAIN}
-Backend:           http://${BACKEND_HOST}:${BACKEND_PORT}
-PM2 process:       ${PM2_PROCESS_NAME}
-Admin webroot:     ${ADMIN_WEBROOT:-not set}
-Widget webroot:    ${WIDGET_WEBROOT:-not set}
-Telegram token:    $(if [[ -n "$TELEGRAM_BOT_TOKEN" ]]; then echo "set"; else echo "empty"; fi)
+${BOLD}Сводка настроек${NC}
+Каталог проекта:       ${PROJECT_ROOT}
+Каталог исходников:    ${SOURCE_PATH}
+Каталог данных:        ${DATA_PATH}
+Домен админки:         ${ADMIN_DOMAIN}
+Домен виджета:         ${WIDGET_DOMAIN}
+Домен API:             ${API_DOMAIN}
+Backend:               http://${BACKEND_HOST}:${BACKEND_PORT}
+PM2-процесс:           ${PM2_PROCESS_NAME}
+Webroot админки:       ${ADMIN_WEBROOT:-не указан}
+Webroot виджета:       ${WIDGET_WEBROOT:-не указан}
+Telegram token:        $(if [[ -n "$TELEGRAM_BOT_TOKEN" ]]; then echo "указан"; else echo "пусто"; fi)
 
 EOF
 }
@@ -219,7 +215,7 @@ install_packages() {
 
 install_node() {
   if command -v node >/dev/null 2>&1 && node -v | grep -q "^v${NODE_MAJOR}\."; then
-    ok "Node.js already installed: $(node -v)"
+    ok "Node.js уже установлен: $(node -v)"
     return 0
   fi
   run bash -c "curl -fsSL https://deb.nodesource.com/setup_${NODE_MAJOR}.x | bash -"
@@ -230,10 +226,10 @@ install_node() {
 
 install_pm2() {
   if command -v pm2 >/dev/null 2>&1; then
-    ok "PM2 already installed: $(pm2 -v)"
+    ok "PM2 уже установлен: $(pm2 -v)"
   else
     run npm install -g pm2
-    ok "PM2 installed: $(pm2 -v)"
+    ok "PM2 установлен: $(pm2 -v)"
   fi
 }
 
@@ -280,8 +276,8 @@ publish_static_if_configured() {
   cd "$SOURCE_PATH"
   if [[ -n "$ADMIN_WEBROOT" ]]; then
     if [[ ! -d "$ADMIN_WEBROOT" ]]; then
-      warn "Admin webroot does not exist: $ADMIN_WEBROOT"
-      warn "Skipping admin publish. Create the site manually in FastPanel first."
+      warn "Webroot админки не найден: $ADMIN_WEBROOT"
+      warn "Публикация админки пропущена. Сначала создай сайт в FastPanel вручную."
     else
       run rsync -av --delete admin-panel/dist/ "$ADMIN_WEBROOT/"
     fi
@@ -289,8 +285,8 @@ publish_static_if_configured() {
 
   if [[ -n "$WIDGET_WEBROOT" ]]; then
     if [[ ! -d "$WIDGET_WEBROOT" ]]; then
-      warn "Widget webroot does not exist: $WIDGET_WEBROOT"
-      warn "Skipping widget publish. Create the site manually in FastPanel first."
+      warn "Webroot виджета не найден: $WIDGET_WEBROOT"
+      warn "Публикация виджета пропущена. Сначала создай сайт в FastPanel вручную."
     else
       run rsync -av --delete widget/dist/ "$WIDGET_WEBROOT/"
     fi
@@ -301,82 +297,82 @@ main() {
   print_header
   require_root
 
-  current_step "Collect configuration"
-  PROJECT_ROOT="$(ask "Project directory" "$PROJECT_ROOT")"
+  current_step "Сбор настроек установки"
+  PROJECT_ROOT="$(ask "Каталог проекта" "$PROJECT_ROOT")"
   SOURCE_PATH="${PROJECT_ROOT}/source"
   DATA_PATH="${PROJECT_ROOT}/data"
   LOGS_PATH="${PROJECT_ROOT}/logs"
   BACKUPS_PATH="${PROJECT_ROOT}/backups"
   UPDATES_PATH="${PROJECT_ROOT}/updates"
 
-  ADMIN_DOMAIN="$(ask "Admin domain" "$ADMIN_DOMAIN")"
-  WIDGET_DOMAIN="$(ask "Widget domain" "$WIDGET_DOMAIN")"
-  API_DOMAIN="$(ask "API domain" "$API_DOMAIN")"
-  ADMIN_WEBROOT="$(ask "Admin FastPanel webroot, leave empty to skip publishing" "$ADMIN_WEBROOT")"
-  WIDGET_WEBROOT="$(ask "Widget FastPanel webroot, leave empty to skip publishing" "$WIDGET_WEBROOT")"
-  TELEGRAM_BOT_TOKEN="$(ask_secret "Telegram bot token, leave empty for now")"
+  ADMIN_DOMAIN="$(ask "Домен админки" "$ADMIN_DOMAIN")"
+  WIDGET_DOMAIN="$(ask "Домен виджета" "$WIDGET_DOMAIN")"
+  API_DOMAIN="$(ask "Домен API" "$API_DOMAIN")"
+  ADMIN_WEBROOT="$(ask "Webroot админки в FastPanel, оставь пустым чтобы пропустить публикацию" "$ADMIN_WEBROOT")"
+  WIDGET_WEBROOT="$(ask "Webroot виджета в FastPanel, оставь пустым чтобы пропустить публикацию" "$WIDGET_WEBROOT")"
+  TELEGRAM_BOT_TOKEN="$(ask_secret "Telegram bot token, можно оставить пустым")"
   JWT_SECRET="$(ask "JWT secret" "$(generate_secret)")"
 
   validate_fastpanel_path "Admin" "$ADMIN_WEBROOT"
   validate_fastpanel_path "Widget" "$WIDGET_WEBROOT"
   print_summary
-  read -r -p "Continue installation? [Y/n]: " confirm
+  read -r -p "Продолжить установку? [Y/n]: " confirm
   if [[ "$confirm" =~ ^[Nn]$ ]]; then
-    warn "Installation cancelled."
+    warn "Установка отменена."
     exit 0
   fi
 
-  current_step "Install base packages"
+  current_step "Установка базовых пакетов"
   install_packages
 
-  current_step "Install Node.js"
+  current_step "Установка Node.js"
   install_node
 
-  current_step "Install PM2"
+  current_step "Установка PM2"
   install_pm2
 
-  current_step "Create WSChat directories"
+  current_step "Создание каталогов WSChat"
   mkdir -p "$PROJECT_ROOT" "$DATA_PATH" "$LOGS_PATH" "$BACKUPS_PATH" "$UPDATES_PATH"
-  ok "Directories created under $PROJECT_ROOT"
+  ok "Каталоги созданы в $PROJECT_ROOT"
 
-  current_step "Clone or update repository"
+  current_step "Клонирование или обновление репозитория"
   clone_or_update_repo
 
-  current_step "Install project dependencies"
+  current_step "Установка зависимостей проекта"
   install_dependencies
 
-  current_step "Write backend .env"
+  current_step "Запись backend .env"
   write_backend_env
   write_install_state
-  ok "Backend env written to $SOURCE_PATH/backend/.env"
-  ok "Install state written to $PROJECT_ROOT/install-state.env"
+  ok "Backend .env записан: $SOURCE_PATH/backend/.env"
+  ok "Состояние установки записано: $PROJECT_ROOT/install-state.env"
 
-  current_step "Start backend with PM2"
+  current_step "Запуск backend через PM2"
   start_backend_pm2
 
-  current_step "Check backend health"
+  current_step "Проверка backend health"
   check_backend
 
-  current_step "Build admin and widget"
+  current_step "Сборка админки и виджета"
   build_frontend
 
-  current_step "Publish static files if webroots are configured"
+  current_step "Публикация статики, если webroot указан"
   publish_static_if_configured
 
-  current_step "Print FastPanel proxy instructions"
+  current_step "Инструкция для proxy в FastPanel"
   cat <<EOF | tee -a "$LOG_FILE"
 
-Create/configure sites manually in FastPanel:
+Создай и настрой сайты вручную в FastPanel:
 - https://${ADMIN_DOMAIN}
 - https://${WIDGET_DOMAIN}
 - https://${API_DOMAIN}
 
-Configure ${API_DOMAIN} as reverse proxy to:
+Настрой ${API_DOMAIN} как reverse proxy на:
   http://${BACKEND_HOST}:${BACKEND_PORT}
 
-WebSocket path /ws must support Upgrade headers.
+Путь WebSocket /ws должен поддерживать Upgrade headers.
 
-Typical Nginx locations:
+Типовые Nginx location-блоки:
 
 location /ws {
     proxy_pass http://${BACKEND_HOST}:${BACKEND_PORT}/ws;
@@ -399,12 +395,12 @@ location / {
 
 EOF
 
-  current_step "Finish"
-  ok "WSChat backend installation finished."
-  ok "Backend local health: http://${BACKEND_HOST}:${BACKEND_PORT}/health"
-  ok "PM2 process: ${PM2_PROCESS_NAME}"
-  ok "Log file: ${LOG_FILE}"
-  warn "Next: configure api domain proxy in FastPanel, then check https://${API_DOMAIN}/health"
+  current_step "Завершение"
+  ok "Установка backend WSChat завершена."
+  ok "Локальная проверка backend: http://${BACKEND_HOST}:${BACKEND_PORT}/health"
+  ok "PM2-процесс: ${PM2_PROCESS_NAME}"
+  ok "Файл лога: ${LOG_FILE}"
+  warn "Следующий шаг: настрой proxy API-домена в FastPanel и проверь https://${API_DOMAIN}/health"
 }
 
 main "$@"
