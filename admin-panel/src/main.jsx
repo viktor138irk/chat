@@ -61,6 +61,7 @@ function App() {
   const [stats, setStats] = useState(null);
   const [messages, setMessages] = useState([]);
   const [telegramSettings, setTelegramSettings] = useState(emptyTelegramSettings);
+  const [telegramDirty, setTelegramDirty] = useState(false);
   const [loading, setLoading] = useState(false);
   const [savingTelegram, setSavingTelegram] = useState(false);
   const [testingProxy, setTestingProxy] = useState(false);
@@ -80,6 +81,7 @@ function App() {
   ]), [stats]);
 
   function patchTelegramSettings(path, value) {
+    setTelegramDirty(true);
     setTelegramSettings((current) => {
       if (path.startsWith('proxy.')) {
         const key = path.replace('proxy.', '');
@@ -99,36 +101,41 @@ function App() {
     });
   }
 
-  async function loadTelegramSettings() {
+  async function loadTelegramSettings({ force = false } = {}) {
+    if (telegramDirty && !force) return;
+
     const response = await fetch(API_URL + '/api/admin/telegram/settings');
     const data = await response.json();
     if (!data.ok) throw new Error(data.error || 'Telegram settings load failed');
     setTelegramSettings(data.settings || emptyTelegramSettings);
+    setTelegramDirty(false);
   }
 
-  async function loadDashboard({ silent = false } = {}) {
+  async function loadDashboard({ silent = false, includeTelegram = false } = {}) {
     if (!silent) setLoading(true);
     setError('');
 
     try {
-      const [healthResponse, statsResponse, messagesResponse, telegramResponse] = await Promise.all([
+      const [healthResponse, statsResponse, messagesResponse] = await Promise.all([
         fetch(API_URL + '/health'),
         fetch(API_URL + '/api/admin/stats'),
-        fetch(API_URL + '/api/admin/messages?limit=25'),
-        fetch(API_URL + '/api/admin/telegram/settings')
+        fetch(API_URL + '/api/admin/messages?limit=25')
       ]);
 
-      const [healthData, statsData, messagesData, telegramData] = await Promise.all([
+      const [healthData, statsData, messagesData] = await Promise.all([
         healthResponse.json(),
         statsResponse.json(),
-        messagesResponse.json(),
-        telegramResponse.json()
+        messagesResponse.json()
       ]);
 
       setHealth(healthData);
       setStats(statsData.stats || null);
       setMessages(Array.isArray(messagesData.messages) ? messagesData.messages : []);
-      if (telegramData.ok) setTelegramSettings(telegramData.settings || emptyTelegramSettings);
+
+      if (includeTelegram) {
+        await loadTelegramSettings({ force: false });
+      }
+
       setLastUpdate(new Date());
     } catch (requestError) {
       setHealth({ ok: false, error: requestError.message });
@@ -164,6 +171,7 @@ function App() {
       const data = await response.json();
       if (!data.ok) throw new Error(data.error || 'Save failed');
       setTelegramSettings(data.settings || emptyTelegramSettings);
+      setTelegramDirty(false);
       setTelegramNotice('Настройки Telegram/SOCKS5 сохранены.');
     } catch (saveError) {
       setTelegramNotice(`Ошибка сохранения: ${saveError.message}`);
@@ -182,7 +190,7 @@ function App() {
       });
       const data = await response.json();
       setProxyTestResult(data);
-      if (data.settings) setTelegramSettings(data.settings);
+      if (data.settings && !telegramDirty) setTelegramSettings(data.settings);
     } catch (testError) {
       setProxyTestResult({ ok: false, status: 'error', message: testError.message });
     } finally {
@@ -190,9 +198,16 @@ function App() {
     }
   }
 
+  async function resetTelegramForm() {
+    setTelegramDirty(false);
+    setTelegramNotice('');
+    setProxyTestResult(null);
+    await loadTelegramSettings({ force: true });
+  }
+
   useEffect(() => {
-    loadDashboard();
-    const timer = setInterval(() => loadDashboard({ silent: true }), REFRESH_MS);
+    loadDashboard({ includeTelegram: true });
+    const timer = setInterval(() => loadDashboard({ silent: true, includeTelegram: false }), REFRESH_MS);
     return () => clearInterval(timer);
   }, []);
 
@@ -210,12 +225,17 @@ function App() {
             <span className={telegramSettings.proxy.enabled ? 'status-pill ok' : 'status-pill muted'}>
               <Wifi size={14} /> SOCKS5: {telegramSettings.proxy.enabled ? 'включен' : 'выключен'}
             </span>
+            {telegramDirty ? (
+              <span className="status-pill warn">
+                <Save size={14} /> есть несохранённые изменения
+              </span>
+            ) : null}
             <span className="status-pill muted">
               <Clock size={14} /> {lastUpdate ? `обновлено ${formatDate(lastUpdate)}` : 'ожидает данных'}
             </span>
           </div>
         </div>
-        <button className="button" onClick={() => loadDashboard()} disabled={loading}>
+        <button className="button" onClick={() => loadDashboard({ includeTelegram: false })} disabled={loading}>
           <RefreshCw size={18} className={loading ? 'spin' : ''} />
           {loading ? 'Обновляю...' : 'Обновить'}
         </button>
@@ -319,12 +339,13 @@ function App() {
                 <Save size={18} className={savingTelegram ? 'spin' : ''} />
                 {savingTelegram ? 'Сохраняю...' : 'Сохранить'}
               </button>
-              <button className="button secondary-button" type="button" onClick={testProxy} disabled={testingProxy}>
+              <button className="button secondary-button" type="button" onClick={testProxy} disabled={testingProxy || telegramDirty}>
                 <PlugZap size={18} className={testingProxy ? 'spin' : ''} />
                 {testingProxy ? 'Проверяю...' : 'Проверить прокси'}
               </button>
-              <button className="ghost-button" type="button" onClick={loadTelegramSettings}>Сбросить форму</button>
+              <button className="ghost-button" type="button" onClick={resetTelegramForm}>Сбросить форму</button>
             </div>
+            {telegramDirty ? <small className="wide-field form-hint">Сначала сохраните изменения, потом проверяйте прокси.</small> : null}
           </form>
 
           {telegramNotice ? <div className="notice"><CheckCircle size={16} /> {telegramNotice}</div> : null}
