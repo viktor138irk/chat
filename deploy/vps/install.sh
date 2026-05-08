@@ -34,6 +34,9 @@ API_DOMAIN="${API_DOMAIN:-api.example.ru}"
 WIDGET_WEBROOT="${WIDGET_WEBROOT:-}"
 TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
 JWT_SECRET="${JWT_SECRET:-}"
+INSTALL_STATE_FILE=""
+REUSE_SAVED_SETTINGS=false
+NON_INTERACTIVE=false
 
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -78,10 +81,87 @@ on_error() {
 }
 trap on_error ERR
 
+usage() {
+  cat <<EOF
+WSChat install.sh
+
+Использование:
+  bash deploy/vps/install.sh
+  bash deploy/vps/install.sh --yes
+  bash deploy/vps/install.sh --reset
+
+Опции:
+  --yes       использовать сохранённые настройки без вопросов, если /opt/ws-chat/install-state.env существует
+  --reset     игнорировать сохранённые настройки и спросить всё заново
+  --help      показать эту справку
+EOF
+}
+
+parse_args() {
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --yes|-y)
+        NON_INTERACTIVE=true
+        shift
+        ;;
+      --reset)
+        REUSE_SAVED_SETTINGS=false
+        INSTALL_STATE_FILE="__ignore__"
+        shift
+        ;;
+      --help|-h)
+        usage
+        exit 0
+        ;;
+      *)
+        fail "Неизвестная опция: $1"
+        usage
+        exit 1
+        ;;
+    esac
+  done
+}
+
+safe_load_env() {
+  local file="$1"
+  [[ -f "$file" ]] || return 1
+
+  # Файл создаётся самим установщиком в формате KEY=value. Подгружаем только ожидаемые ключи.
+  while IFS='=' read -r key value; do
+    [[ -z "${key:-}" || "$key" =~ ^# ]] && continue
+    case "$key" in
+      PROJECT_ROOT|SOURCE_PATH|DATA_PATH|LOGS_PATH|BACKUPS_PATH|UPDATES_PATH|WIDGET_DOMAIN|API_DOMAIN|WIDGET_WEBROOT|BACKEND_HOST|BACKEND_PORT|PM2_PROCESS_NAME)
+        printf -v "$key" '%s' "$value"
+        ;;
+    esac
+  done < "$file"
+
+  # После загрузки PROJECT_ROOT пересчитываем путь к state-файлу, но source/data оставляем из state.
+  INSTALL_STATE_FILE="${PROJECT_ROOT}/install-state.env"
+  return 0
+}
+
+find_saved_settings() {
+  if [[ "$INSTALL_STATE_FILE" == "__ignore__" ]]; then
+    return 0
+  fi
+
+  local default_state="${PROJECT_ROOT}/install-state.env"
+  if [[ -f "$default_state" ]]; then
+    INSTALL_STATE_FILE="$default_state"
+    safe_load_env "$INSTALL_STATE_FILE" || true
+    REUSE_SAVED_SETTINGS=true
+  fi
+}
+
 ask() {
   local prompt="$1"
   local default_value="$2"
   local result
+  if [[ "$NON_INTERACTIVE" == true ]]; then
+    printf "%s" "$default_value"
+    return 0
+  fi
   read -r -p "$(printf "${BOLD}%s${NC} [%s]: " "$prompt" "$default_value")" result
   if [[ -z "$result" ]]; then
     printf "%s" "$default_value"
@@ -92,10 +172,19 @@ ask() {
 
 ask_secret() {
   local prompt="$1"
+  local default_value="${2:-}"
   local result
+  if [[ "$NON_INTERACTIVE" == true ]]; then
+    printf "%s" "$default_value"
+    return 0
+  fi
   read -r -s -p "$(printf "${BOLD}%s${NC}: " "$prompt")" result
   printf "\n" >&2
-  printf "%s" "$result"
+  if [[ -z "$result" ]]; then
+    printf "%s" "$default_value"
+  else
+    printf "%s" "$result"
+  fi
 }
 
 generate_secret() {
@@ -103,6 +192,20 @@ generate_secret() {
     openssl rand -hex 32
   else
     date +%s%N | sha256sum | awk '{print $1}'
+  fi
+}
+
+read_existing_backend_secret() {
+  local env_file="$SOURCE_PATH/backend/.env"
+  [[ -f "$env_file" ]] || return 0
+  local value
+  value="$(grep -E '^JWT_SECRET=' "$env_file" | head -n1 | cut -d= -f2- || true)"
+  if [[ -n "$value" && -z "$JWT_SECRET" ]]; then
+    JWT_SECRET="$value"
+  fi
+  value="$(grep -E '^TELEGRAM_BOT_TOKEN=' "$env_file" | head -n1 | cut -d= -f2- || true)"
+  if [[ -n "$value" && -z "$TELEGRAM_BOT_TOKEN" ]]; then
+    TELEGRAM_BOT_TOKEN="$value"
   fi
 }
 
@@ -161,6 +264,7 @@ EOF
 }
 
 write_install_state() {
+  mkdir -p "$PROJECT_ROOT"
   cat > "$PROJECT_ROOT/install-state.env" <<EOF
 PROJECT_NAME=${PROJECT_NAME}
 PROJECT_ROOT=${PROJECT_ROOT}
@@ -187,6 +291,9 @@ print_header() {
   printf "${BOLD}${BLUE}Интерактивный установщик WSChat для VPS${NC}\n"
   printf "Сайты и домены FastPanel создаются вручную. Установщик не меняет конфиги FastPanel.\n"
   printf "Админка публикуется в подкаталог виджета: https://<домен-виджета>/admin/\n"
+  if [[ "$REUSE_SAVED_SETTINGS" == true ]]; then
+    printf "Найдены сохранённые настройки: %s\n" "$INSTALL_STATE_FILE"
+  fi
   printf "Файл лога: %s\n\n" "$LOG_FILE"
 }
 
@@ -205,6 +312,7 @@ PM2-процесс:           ${PM2_PROCESS_NAME}
 Webroot виджета:       ${WIDGET_WEBROOT:-не указан}
 Каталог админки:       ${WIDGET_WEBROOT:-не указан}/admin
 Telegram token:        $(if [[ -n "$TELEGRAM_BOT_TOKEN" ]]; then echo "указан"; else echo "пусто"; fi)
+Сохранённые настройки: ${PROJECT_ROOT}/install-state.env
 
 EOF
 }
@@ -292,29 +400,44 @@ publish_static_if_configured() {
 }
 
 main() {
+  parse_args "$@"
+  find_saved_settings
   print_header
   require_root
 
   current_step "Сбор настроек установки"
-  PROJECT_ROOT="$(ask "Каталог проекта" "$PROJECT_ROOT")"
-  SOURCE_PATH="${PROJECT_ROOT}/source"
-  DATA_PATH="${PROJECT_ROOT}/data"
-  LOGS_PATH="${PROJECT_ROOT}/logs"
-  BACKUPS_PATH="${PROJECT_ROOT}/backups"
-  UPDATES_PATH="${PROJECT_ROOT}/updates"
+  if [[ "$REUSE_SAVED_SETTINGS" == true && "$NON_INTERACTIVE" != true ]]; then
+    read -r -p "Использовать сохранённые настройки? [Y/n]: " use_saved
+    if [[ "$use_saved" =~ ^[Nn]$ ]]; then
+      REUSE_SAVED_SETTINGS=false
+    fi
+  fi
 
-  WIDGET_DOMAIN="$(ask "Домен виджета и админки" "$WIDGET_DOMAIN")"
-  API_DOMAIN="$(ask "Домен API" "$API_DOMAIN")"
-  WIDGET_WEBROOT="$(ask "Webroot сайта виджета в FastPanel, оставь пустым чтобы пропустить публикацию" "$WIDGET_WEBROOT")"
-  TELEGRAM_BOT_TOKEN="$(ask_secret "Telegram bot token, можно оставить пустым")"
-  JWT_SECRET="$(ask "JWT secret" "$(generate_secret)")"
+  if [[ "$REUSE_SAVED_SETTINGS" != true ]]; then
+    PROJECT_ROOT="$(ask "Каталог проекта" "$PROJECT_ROOT")"
+    SOURCE_PATH="${PROJECT_ROOT}/source"
+    DATA_PATH="${PROJECT_ROOT}/data"
+    LOGS_PATH="${PROJECT_ROOT}/logs"
+    BACKUPS_PATH="${PROJECT_ROOT}/backups"
+    UPDATES_PATH="${PROJECT_ROOT}/updates"
+
+    WIDGET_DOMAIN="$(ask "Домен виджета и админки" "$WIDGET_DOMAIN")"
+    API_DOMAIN="$(ask "Домен API" "$API_DOMAIN")"
+    WIDGET_WEBROOT="$(ask "Webroot сайта виджета в FastPanel, оставь пустым чтобы пропустить публикацию" "$WIDGET_WEBROOT")"
+  fi
+
+  read_existing_backend_secret
+  TELEGRAM_BOT_TOKEN="$(ask_secret "Telegram bot token, можно оставить пустым" "$TELEGRAM_BOT_TOKEN")"
+  JWT_SECRET="$(ask "JWT secret" "${JWT_SECRET:-$(generate_secret)}")"
 
   validate_fastpanel_path "Widget" "$WIDGET_WEBROOT"
   print_summary
-  read -r -p "Продолжить установку? [Y/n]: " confirm
-  if [[ "$confirm" =~ ^[Nn]$ ]]; then
-    warn "Установка отменена."
-    exit 0
+  if [[ "$NON_INTERACTIVE" != true ]]; then
+    read -r -p "Продолжить установку? [Y/n]: " confirm
+    if [[ "$confirm" =~ ^[Nn]$ ]]; then
+      warn "Установка отменена."
+      exit 0
+    fi
   fi
 
   current_step "Установка базовых пакетов"
@@ -336,7 +459,7 @@ main() {
   current_step "Установка зависимостей проекта"
   install_dependencies
 
-  current_step "Запись backend .env"
+  current_step "Запись backend .env и сохранение настроек"
   write_backend_env
   write_install_state
   ok "Backend .env записан: $SOURCE_PATH/backend/.env"
@@ -399,6 +522,7 @@ EOF
   ok "Админка: https://${WIDGET_DOMAIN}/admin/"
   ok "PM2-процесс: ${PM2_PROCESS_NAME}"
   ok "Файл лога: ${LOG_FILE}"
+  ok "Сохранённые настройки: ${PROJECT_ROOT}/install-state.env"
   warn "Следующий шаг: настрой proxy API-домена в FastPanel и проверь https://${API_DOMAIN}/health"
 }
 
