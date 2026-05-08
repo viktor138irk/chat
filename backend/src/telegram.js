@@ -1,4 +1,4 @@
-import { Telegraf } from 'telegraf';
+import { Telegraf, Markup } from 'telegraf';
 import { SocksProxyAgent } from 'socks-proxy-agent';
 import {
   createOperatorMessage,
@@ -11,6 +11,7 @@ import {
 
 let bot = null;
 let operatorMessageNotifier = null;
+const activeOperatorConversations = new Map();
 let botStatus = {
   enabled: false,
   running: false,
@@ -48,6 +49,37 @@ function buildTelegramOptions(settings) {
   };
 }
 
+function getConversationIdFromReply(ctx) {
+  const replyTo = ctx.message?.reply_to_message;
+  const sourceText = replyTo?.text || replyTo?.caption || '';
+  const match = sourceText.match(/Conversation:\s*(conv_[a-zA-Z0-9_-]+)/);
+  return match ? match[1] : '';
+}
+
+async function saveOperatorAnswer({ ctx, operator, conversationId, text }) {
+  const conversation = getConversationWithVisitor(conversationId);
+  if (!conversation) {
+    await ctx.reply('Conversation not found.');
+    return false;
+  }
+
+  const message = createOperatorMessage({
+    conversationId,
+    siteId: conversation.site_id,
+    operatorId: operator.id,
+    body: text,
+    telegramMessageId: String(ctx.message.message_id)
+  });
+
+  if (operatorMessageNotifier) {
+    operatorMessageNotifier({ conversation, message, operator });
+  }
+
+  activeOperatorConversations.set(String(ctx.from.id), conversationId);
+  await ctx.reply(`Answer sent to ${conversation.site_domain || conversation.site_id} / ${conversation.visitor_key}.`);
+  return true;
+}
+
 export function setOperatorMessageNotifier(callback) {
   operatorMessageNotifier = callback;
 }
@@ -55,7 +87,8 @@ export function setOperatorMessageNotifier(callback) {
 export function getTelegramBridgeStatus() {
   return {
     ...botStatus,
-    hasBot: Boolean(bot)
+    hasBot: Boolean(bot),
+    activeTelegramDialogs: activeOperatorConversations.size
   };
 }
 
@@ -69,6 +102,7 @@ export async function stopTelegramBridge(reason = 'restart') {
   }
 
   bot = null;
+  activeOperatorConversations.clear();
   botStatus = {
     ...botStatus,
     running: false,
@@ -117,12 +151,44 @@ export async function startTelegramBridge({ logger } = {}) {
 
     nextBot.command('status', async (ctx) => {
       const status = getTelegramBridgeStatus();
+      const activeConversationId = activeOperatorConversations.get(String(ctx.from.id));
       await ctx.reply(
         `WSChat bridge\n` +
         `running: ${status.running ? 'yes' : 'no'}\n` +
         `proxy: ${status.proxyEnabled ? 'enabled' : 'disabled'}\n` +
-        `bot: ${status.username || 'unknown'}`
+        `bot: ${status.username || 'unknown'}\n` +
+        `active dialog: ${activeConversationId || 'not selected'}`
       );
+    });
+
+    nextBot.action(/^answer:(conv_[a-zA-Z0-9_-]+)$/, async (ctx) => {
+      const operator = getOperatorByTelegramUserId(ctx.from.id);
+      if (!operator) {
+        await ctx.answerCbQuery('Send /start first');
+        return;
+      }
+
+      const conversationId = ctx.match[1];
+      const conversation = getConversationWithVisitor(conversationId);
+      if (!conversation) {
+        await ctx.answerCbQuery('Conversation not found');
+        return;
+      }
+
+      activeOperatorConversations.set(String(ctx.from.id), conversationId);
+      await ctx.answerCbQuery('Dialog selected');
+      await ctx.reply(
+        `Active dialog selected:\n` +
+        `${conversation.site_domain || conversation.site_id}\n` +
+        `Visitor: ${conversation.visitor_key}\n\n` +
+        `Now send a normal Telegram message here. It will go to this visitor.`
+      );
+    });
+
+    nextBot.action(/^close_active$/, async (ctx) => {
+      activeOperatorConversations.delete(String(ctx.from.id));
+      await ctx.answerCbQuery('Active dialog cleared');
+      await ctx.reply('Active dialog cleared. Choose another dialog with the Answer button or reply to a notification.');
     });
 
     nextBot.on('text', async (ctx) => {
@@ -135,35 +201,16 @@ export async function startTelegramBridge({ logger } = {}) {
         return;
       }
 
-      const replyTo = ctx.message?.reply_to_message;
-      const sourceText = replyTo?.text || replyTo?.caption || '';
-      const match = sourceText.match(/Conversation:\s*(conv_[a-zA-Z0-9_-]+)/);
+      const replyConversationId = getConversationIdFromReply(ctx);
+      const activeConversationId = activeOperatorConversations.get(String(ctx.from.id));
+      const conversationId = replyConversationId || activeConversationId;
 
-      if (!match) {
-        await ctx.reply('Reply to a WSChat notification message to answer a visitor.');
+      if (!conversationId) {
+        await ctx.reply('Choose a dialog with the Answer button or reply to a WSChat notification message.');
         return;
       }
 
-      const conversationId = match[1];
-      const conversation = getConversationWithVisitor(conversationId);
-      if (!conversation) {
-        await ctx.reply('Conversation not found.');
-        return;
-      }
-
-      const message = createOperatorMessage({
-        conversationId,
-        siteId: conversation.site_id,
-        operatorId: operator.id,
-        body: text,
-        telegramMessageId: String(ctx.message.message_id)
-      });
-
-      if (operatorMessageNotifier) {
-        operatorMessageNotifier({ conversation, message, operator });
-      }
-
-      await ctx.reply(`Answer saved for conversation ${conversationId}.`);
+      await saveOperatorAnswer({ ctx, operator, conversationId, text });
     });
 
     const me = await nextBot.telegram.getMe();
@@ -221,13 +268,18 @@ export async function notifyOperatorsAboutVisitorMessage({ site, visitor, conver
     '',
     escapeHtml(message.body),
     '',
-    'Reply to this message to save an operator answer.'
+    'Press Answer to select this dialog, or reply to this message directly.'
   ].join('\n');
+
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('Ответить в этот чат', `answer:${conversation.id}`)],
+    [Markup.button.callback('Сбросить активный диалог', 'close_active')]
+  ]);
 
   let sent = 0;
   for (const operator of operators) {
     try {
-      await bot.telegram.sendMessage(operator.telegram_user_id, text);
+      await bot.telegram.sendMessage(operator.telegram_user_id, text, keyboard);
       sent += 1;
     } catch (error) {
       logger?.warn?.({ operatorId: operator.id, error: error.message }, 'Failed to notify Telegram operator');
