@@ -69,34 +69,92 @@ Important fixes already made:
 - Admin HTML title was changed from `Raspi Chat Admin` to `WSChat Admin` in commit `e5cac5ef34287931f7661bc26dcf739cdf9e7f90`.
 - If Telegram bot token was ever pasted into chat/logs, it must be revoked/regenerated in BotFather before production use.
 
-After pulling, rebuild admin and publish:
+## Current backend persistence implementation
+
+SQLite layer added in commit `502d214eac515863037d8f2bc6f09161dc19624e`.
+
+New file:
+
+```text
+backend/src/db.js
+```
+
+It creates and manages:
+
+```text
+sites
+operators
+site_operators
+visitors
+conversations
+messages
+settings
+```
+
+SQLite database path comes from:
+
+```env
+DATABASE_PATH=/opt/ws-chat/data/chat.sqlite
+```
+
+Backend now calls `migrate()` on startup and creates default site:
+
+```text
+site id: site_default
+widget_key: site_default
+```
+
+Widget message persistence added in commit `bb6dcb106948f83ec588b03777c3ce263509e80a`.
+
+Current backend endpoints:
+
+```text
+GET  /health
+GET  /api/config/public
+GET  /api/admin/stats
+GET  /api/admin/messages?limit=50
+POST /api/widget/message
+GET  /ws
+```
+
+`POST /api/widget/message` now:
+
+- validates `siteId`, `visitorId`, `message`;
+- checks active site by `widget_key`;
+- creates/touches visitor;
+- creates/reuses open conversation;
+- saves visitor message into SQLite;
+- returns `status: saved`, `conversationId`, and `messageId`.
+
+Test commands after pulling latest code on VPS:
 
 ```bash
 cd /opt/ws-chat/source
 git pull --ff-only origin main
 npm install
-npm run build:admin
-rsync -av --delete admin-panel/dist/ /var/www/widget_stack_usr/data/www/widget.stackworks.ru/admin/
 pm2 restart wschat-backend --update-env
-```
 
-Verify CORS/backend:
-
-```bash
 curl http://127.0.0.1:3000/health
-curl -i https://api.stackworks.ru/health -H "Origin: https://widget.stackworks.ru"
+
+curl -s https://api.stackworks.ru/api/admin/stats | jq
+
+curl -s -X POST https://api.stackworks.ru/api/widget/message \
+  -H 'Content-Type: application/json' \
+  -H 'Origin: https://widget.stackworks.ru' \
+  -d '{"siteId":"site_default","visitorId":"test_visitor_1","message":"Тестовое сообщение WSChat"}' | jq
+
+curl -s https://api.stackworks.ru/api/admin/messages | jq
 ```
 
-Expected health:
+Expected POST result:
 
 ```json
-{"ok":true,"service":"wschat-backend","env":"production"}
-```
-
-Expected CORS header:
-
-```text
-access-control-allow-origin: https://widget.stackworks.ru
+{
+  "ok": true,
+  "status": "saved",
+  "conversationId": "conv_...",
+  "messageId": "msg_..."
+}
 ```
 
 ## Current architecture
@@ -329,6 +387,7 @@ Use VPS-only deployment.
 │   ├── package.json
 │   └── src/
 │       ├── config.js
+│       ├── db.js
 │       └── server.js
 ├── admin-panel/
 │   ├── index.html
@@ -434,7 +493,9 @@ Stack:
 - @fastify/cors
 - @fastify/rate-limit
 - @fastify/websocket
-- better-sqlite3 dependency already added but schema not implemented yet
+- better-sqlite3
+- SQLite
+- nanoid
 - telegraf dependency already added but Telegram bridge not implemented yet
 
 Current endpoints:
@@ -442,11 +503,11 @@ Current endpoints:
 ```text
 GET  /health
 GET  /api/config/public
+GET  /api/admin/stats
+GET  /api/admin/messages?limit=50
 POST /api/widget/message
 GET  /ws
 ```
-
-`/api/widget/message` currently validates basic fields and returns accepted. Persistence and Telegram forwarding are not implemented yet.
 
 For VPS-only architecture, backend env should use:
 
@@ -509,7 +570,7 @@ Current embed example:
 ```html
 <script
   src="https://widget.stackworks.ru/widget.js"
-  data-site-id="site_xxxxx"
+  data-site-id="site_default"
   data-api-url="https://api.stackworks.ru">
 </script>
 ```
@@ -573,23 +634,18 @@ FASTPANEL_SAFE_MODE=true
 - Admin Vite base `/admin/` added: `9943376645882eeb3cdc372b5292c72519e005b2`
 - Admin API fallback fixed: `3e956e5c2ab65fe563f6c5d71bb2d032cbf8bcad`
 - Admin HTML title renamed to WSChat: `e5cac5ef34287931f7661bc26dcf739cdf9e7f90`
+- SQLite DB layer added: `502d214eac515863037d8f2bc6f09161dc19624e`
+- Widget message persistence added: `bb6dcb106948f83ec588b03777c3ce263509e80a`
 
 ## Next development steps
 
-1. Pull latest changes on VPS and rebuild/publish admin so title says `WSChat Admin`.
-2. Verify admin panel API card shows `ok: true` and `env: production`.
-3. Finish updating docs to WSChat/VPS-only same-domain widget/admin architecture.
-4. Update deploy-agent for widget/admin same webroot and backend restart.
-5. Fix widget production build so it outputs stable `widget.js`.
-6. Add SQLite database layer:
-   - sites
-   - operators
-   - site_operators
-   - visitors
-   - conversations
-   - messages
-   - settings
-7. Persist widget messages.
+1. Pull latest backend persistence changes on VPS.
+2. Restart PM2 and verify SQLite DB creation at `/opt/ws-chat/data/chat.sqlite`.
+3. Test POST `/api/widget/message` with `siteId: site_default`.
+4. Test GET `/api/admin/messages` and `/api/admin/stats`.
+5. Update admin UI to show message/stats cards.
+6. Update deploy-agent for widget/admin same webroot and backend restart.
+7. Fix widget production build so it outputs stable `widget.js`.
 8. Implement Telegram bot bridge:
    - send website messages to allowed operators
    - map Telegram replies to conversations
@@ -627,5 +683,5 @@ Open this file first. Then continue from "Next development steps".
 Recommended next task:
 
 ```text
-Verify admin API health after rebuild, then implement SQLite schema and message persistence.
+Pull latest changes on VPS, test SQLite message persistence, then show messages/stats in admin UI.
 ```
