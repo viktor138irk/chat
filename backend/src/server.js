@@ -3,9 +3,11 @@ import cors from '@fastify/cors';
 import rateLimit from '@fastify/rate-limit';
 import websocket from '@fastify/websocket';
 import { randomUUID } from 'node:crypto';
+import { nanoid } from 'nanoid';
 import { config } from './config.js';
 import {
   createVisitorMessage,
+  db,
   getOrCreateOpenConversation,
   getSiteByWidgetKey,
   getStats,
@@ -56,6 +58,21 @@ const clients = new Map();
 
 function getClientKey(siteId, visitorId) {
   return `${siteId || 'unknown_site'}:${visitorId || 'unknown_visitor'}`;
+}
+
+function normalizeDomain(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split('/')[0]
+    .split(':')[0];
+}
+
+function makeWidgetKey(domain) {
+  const normalized = normalizeDomain(domain).replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+  return `site_${normalized || nanoid(8)}`;
 }
 
 function sendJson(connection, payload) {
@@ -173,6 +190,101 @@ app.get('/api/admin/messages', async (request) => {
     ok: true,
     messages: listRecentMessages(limit)
   };
+});
+
+app.get('/api/admin/sites', async () => ({
+  ok: true,
+  sites: db.prepare(`
+    SELECT
+      sites.*,
+      COUNT(DISTINCT visitors.id) AS visitors_count,
+      COUNT(DISTINCT conversations.id) AS conversations_count,
+      COUNT(DISTINCT site_operators.operator_id) AS operators_count
+    FROM sites
+    LEFT JOIN visitors ON visitors.site_id = sites.id
+    LEFT JOIN conversations ON conversations.site_id = sites.id
+    LEFT JOIN site_operators ON site_operators.site_id = sites.id
+    GROUP BY sites.id
+    ORDER BY sites.created_at DESC
+  `).all()
+}));
+
+app.post('/api/admin/sites', async (request, reply) => {
+  const body = request.body || {};
+  const domain = normalizeDomain(body.domain);
+  const name = String(body.name || domain || '').trim();
+  const widgetKey = String(body.widgetKey || makeWidgetKey(domain)).trim();
+
+  if (!domain) {
+    reply.code(400);
+    return { ok: false, error: 'domain is required' };
+  }
+
+  const id = widgetKey;
+
+  try {
+    db.prepare(`
+      INSERT INTO sites (id, name, domain, widget_key, is_active)
+      VALUES (?, ?, ?, ?, 1)
+    `).run(id, name || domain, domain, widgetKey);
+
+    return {
+      ok: true,
+      site: db.prepare('SELECT * FROM sites WHERE id = ?').get(id)
+    };
+  } catch (error) {
+    reply.code(400);
+    return { ok: false, error: error.message };
+  }
+});
+
+app.get('/api/admin/operators', async () => ({
+  ok: true,
+  operators: db.prepare(`
+    SELECT
+      operators.*,
+      GROUP_CONCAT(sites.domain, ', ') AS sites
+    FROM operators
+    LEFT JOIN site_operators ON site_operators.operator_id = operators.id
+    LEFT JOIN sites ON sites.id = site_operators.site_id
+    GROUP BY operators.id
+    ORDER BY operators.updated_at DESC
+  `).all()
+}));
+
+app.post('/api/admin/site-operators', async (request, reply) => {
+  const body = request.body || {};
+  const siteId = String(body.siteId || '').trim();
+  const operatorId = String(body.operatorId || '').trim();
+
+  if (!siteId || !operatorId) {
+    reply.code(400);
+    return { ok: false, error: 'siteId and operatorId are required' };
+  }
+
+  const site = db.prepare('SELECT id FROM sites WHERE id = ? AND is_active = 1').get(siteId);
+  const operator = db.prepare('SELECT id FROM operators WHERE id = ? AND is_active = 1').get(operatorId);
+
+  if (!site || !operator) {
+    reply.code(404);
+    return { ok: false, error: 'site or operator not found' };
+  }
+
+  db.prepare(`
+    INSERT OR IGNORE INTO site_operators (site_id, operator_id)
+    VALUES (?, ?)
+  `).run(siteId, operatorId);
+
+  return { ok: true };
+});
+
+app.delete('/api/admin/site-operators', async (request) => {
+  const body = request.body || {};
+  const siteId = String(body.siteId || '').trim();
+  const operatorId = String(body.operatorId || '').trim();
+
+  db.prepare('DELETE FROM site_operators WHERE site_id = ? AND operator_id = ?').run(siteId, operatorId);
+  return { ok: true };
 });
 
 app.get('/api/admin/telegram/settings', async () => ({
