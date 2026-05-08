@@ -94,6 +94,7 @@ app.get('/health', async () => ({
   ok: true,
   service: 'wschat-backend',
   env: config.app.env,
+  dbPath: config.db.path,
   telegram: getTelegramBridgeStatus()
 }));
 
