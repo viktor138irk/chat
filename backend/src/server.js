@@ -42,6 +42,48 @@ await app.register(websocket);
 
 const clients = new Map();
 
+function validateSocks5Settings(settings) {
+  const proxy = settings.proxy || {};
+
+  if (!proxy.enabled) {
+    return {
+      ok: true,
+      status: 'disabled',
+      message: 'SOCKS5 выключен. Telegram будет подключаться напрямую.'
+    };
+  }
+
+  if (proxy.type !== 'socks5') {
+    return {
+      ok: false,
+      status: 'invalid',
+      message: 'Сейчас поддерживается только socks5.'
+    };
+  }
+
+  if (!proxy.host) {
+    return {
+      ok: false,
+      status: 'invalid',
+      message: 'Укажите host SOCKS5 прокси.'
+    };
+  }
+
+  if (!Number.isInteger(proxy.port) || proxy.port < 1 || proxy.port > 65535) {
+    return {
+      ok: false,
+      status: 'invalid',
+      message: 'Порт SOCKS5 должен быть от 1 до 65535.'
+    };
+  }
+
+  return {
+    ok: true,
+    status: 'configured',
+    message: `SOCKS5 включен: ${proxy.host}:${proxy.port}. Полная проверка Telegram будет доступна после подключения bot bridge.`
+  };
+}
+
 app.get('/health', async () => ({
   ok: true,
   service: 'wschat-backend',
@@ -86,6 +128,16 @@ app.post('/api/admin/telegram/settings', async (request, reply) => {
       error: error.message
     };
   }
+});
+
+app.post('/api/admin/telegram/test-proxy', async () => {
+  const settings = getTelegramSettings({ revealSecrets: true });
+  const result = validateSocks5Settings(settings);
+
+  return {
+    ...result,
+    settings: getTelegramSettings()
+  };
 });
 
 app.post('/api/widget/message', async (request) => {
