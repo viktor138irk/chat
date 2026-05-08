@@ -94,6 +94,7 @@ export function migrate() {
     CREATE INDEX IF NOT EXISTS idx_messages_conversation_created ON messages(conversation_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_messages_site_created ON messages(site_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_operators_telegram_user_id ON operators(telegram_user_id);
+    CREATE INDEX IF NOT EXISTS idx_sites_domain_active ON sites(domain, is_active);
   `);
 
   ensureDefaultSite();
@@ -110,6 +111,37 @@ export function ensureDefaultSite() {
   `).run('site_default', 'Default site', config.cors.widgetOrigin.replace(/^https?:\/\//, ''), 'site_default');
 
   return 'site_default';
+}
+
+function normalizeHost(value) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/^www\./, '')
+    .split('/')[0]
+    .split(':')[0];
+}
+
+export function isAllowedWidgetOrigin(origin) {
+  if (!origin) return true;
+
+  let originHost = '';
+  try {
+    originHost = normalizeHost(new URL(origin).hostname);
+  } catch {
+    originHost = normalizeHost(origin);
+  }
+
+  if (!originHost) return false;
+
+  const rows = db.prepare(`
+    SELECT domain
+    FROM sites
+    WHERE is_active = 1
+  `).all();
+
+  return rows.some((row) => normalizeHost(row.domain) === originHost);
 }
 
 function boolToSetting(value) {
