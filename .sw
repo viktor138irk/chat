@@ -12,7 +12,7 @@ Never store secrets in this file: no Telegram tokens, proxy passwords, API keys,
 
 ## Product
 
-Self-hosted live chat similar to Jivo. Website widget sends visitor messages to Telegram operators. Operators reply in Telegram, and replies will later return to the website widget.
+Self-hosted live chat similar to Jivo. Website widget sends visitor messages to Telegram operators. Operators reply in Telegram, and replies return back into the website widget through WebSocket.
 
 ## Deployment
 
@@ -60,16 +60,6 @@ telegram.proxy.username
 telegram.proxy.password
 ```
 
-Diagnostics:
-
-```bash
-sqlite3 /opt/ws-chat/data/chat.sqlite "select key, value from settings where key like 'telegram.proxy.%';"
-sqlite3 /opt/ws-chat/data/chat.sqlite "select key, length(value) as len from settings where key='telegram.bot_token';"
-find /opt/ws-chat/source -name "chat.sqlite"
-```
-
-If a DB exists inside `/opt/ws-chat/source/backend/data/`, that was a wrong fallback DB from older code.
-
 ## Current endpoints
 
 ```text
@@ -85,31 +75,39 @@ POST /api/widget/message
 GET  /ws
 ```
 
-Expected `/health` includes:
+## WebSocket architecture
+
+Widget now opens:
 
 ```text
-ok=true
-service=wschat-backend
-env=production
-dbPath=/opt/ws-chat/data/chat.sqlite
-telegram.enabled=true
-telegram.running=true
-telegram.error=
-telegram.proxyEnabled=true
-telegram.hasBot=true
+/ws?siteId=<siteId>&visitorId=<visitorId>
 ```
 
-## Admin panel
+Backend stores WebSocket clients by:
 
-Implemented:
+```text
+siteId:visitorId
+```
 
-- dashboard stats/messages;
-- Telegram/SOCKS5 settings form;
-- dirty-state protection so refresh does not wipe settings while typing;
-- token/password masks;
-- save/test/reset actions.
+Telegram replies are delivered from:
 
-Important: admin loads Telegram settings from `GET /api/admin/telegram/settings`, which reads SQLite.
+```text
+telegram.js -> operatorMessageNotifier -> server.js broadcastToVisitor()
+```
+
+Payload format:
+
+```json
+{
+  "type": "operator_message",
+  "conversationId": "conv_xxx",
+  "message": {
+    "id": "msg_xxx",
+    "direction": "operator",
+    "body": "text"
+  }
+}
+```
 
 ## Telegram bridge
 
@@ -134,11 +132,8 @@ Implemented:
 - `/start` registers operator;
 - `/status` replies with bridge state;
 - visitor messages go to active Telegram operators;
-- Telegram reply can be saved as operator message when replying to WSChat notification.
-
-Not finished yet:
-
-- delivery of Telegram replies back to widget via WebSocket.
+- Telegram replies are saved as operator messages;
+- Telegram replies are delivered back to widget through WebSocket.
 
 Important proxy fix:
 
@@ -185,6 +180,8 @@ Only one polling instance may run per Telegram bot token.
 4b46aabc8210158f97c3c6e9274b8f703f7a8aa2 - Telegram proxy changed to socks5h
 6f14353cd403f351c89e4274d189808951dcf940 - production DB fallback fixed
 be004fd14ab16e3b1262980fe044356d2efbe806 - health endpoint includes dbPath
+ec2eeeea66047dcd982a4c0258d1338314e25c29 - WebSocket delivery from Telegram replies implemented
+49f502f84c8e2d2979481d71010908457fb0ce84 - widget connected to WebSocket backend
 ```
 
 ## Deployment commands
@@ -197,18 +194,6 @@ git pull --ff-only origin main
 cd backend
 npm install
 pm2 restart wschat-backend --update-env
-```
-
-Hard restart as single PM2 process:
-
-```bash
-pkill -f "/opt/ws-chat/source/backend/src/server.js" || true
-pkill -f "node src/server.js" || true
-pm2 delete wschat-backend || true
-cd /opt/ws-chat/source/backend
-npm install
-pm2 start src/server.js --name wschat-backend --update-env
-pm2 save
 ```
 
 Frontend build/publish:
@@ -236,10 +221,10 @@ Never edit global FastPanel/nginx configs from project scripts. Never bind proje
 
 1. Kill duplicate Telegram polling process.
 2. Start exactly one PM2 process `wschat-backend`.
-3. Confirm `/health`: correct `dbPath` and `telegram.running=true`.
+3. Confirm `/health`: correct `dbPath`, `telegram.running=true`, and `wsClients` counter.
 4. Send `/start` to the Telegram bot.
 5. Send widget message and confirm it reaches Telegram.
-6. Implement Telegram reply delivery back to widget via WebSocket.
+6. Reply in Telegram and confirm it instantly appears in widget.
 7. Add admin bridge status/restart button.
 8. Add admin operator list.
 9. Add admin auth.
