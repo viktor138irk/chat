@@ -13,37 +13,40 @@
 
   const style = document.createElement('style');
   style.textContent = `
-    .raspi-chat-button{position:fixed;right:18px;bottom:18px;z-index:2147483000;border:0;border-radius:999px;background:#172033;color:#fff;padding:13px 17px;font:700 14px system-ui;box-shadow:0 14px 35px rgba(0,0,0,.18);cursor:pointer;line-height:1}
-    .raspi-chat-panel{position:fixed;right:18px;bottom:72px;z-index:2147483000;width:360px;max-width:calc(100vw - 32px);height:420px;max-height:calc(100dvh - 92px);display:none;flex-direction:column;border-radius:22px;overflow:hidden;background:#fff;box-shadow:0 22px 70px rgba(0,0,0,.22);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    .raspi-chat-panel.open{display:flex}
-    .raspi-chat-header{display:flex;align-items:center;justify-content:space-between;gap:12px;min-height:54px;padding:12px 14px 12px 16px;background:#172033;color:#fff;font-weight:800;line-height:1.2;flex:0 0 auto}
-    .raspi-chat-title{display:flex;flex-direction:column;gap:2px;min-width:0}
-    .raspi-chat-title strong{font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .raspi-chat-title span{font-size:11px;font-weight:600;color:rgba(255,255,255,.68)}
-    .raspi-chat-close{width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:12px;background:rgba(255,255,255,.1);color:#fff;font:800 22px/1 system-ui;cursor:pointer;flex:0 0 auto}
-    .raspi-chat-close:hover{background:rgba(255,255,255,.16)}
-    .raspi-chat-messages{flex:1 1 auto;min-height:0;padding:14px;overflow:auto;background:#f4f6fb;color:#172033;font-size:14px;overscroll-behavior:contain}
-    .raspi-chat-message{margin:0 0 10px;padding:10px 12px;border-radius:14px;background:#fff;line-height:1.45;word-wrap:break-word;white-space:pre-wrap}
-    .raspi-chat-message.operator{background:#dfe8ff;margin-left:18px}
-    .raspi-chat-message.visitor{background:#fff;margin-right:18px}
-    .raspi-chat-system{opacity:.7;font-size:12px;padding:4px 2px}
-    .raspi-chat-form{display:flex;gap:8px;padding:10px;border-top:1px solid #e7ebf3;background:#fff;flex:0 0 auto}
-    .raspi-chat-input{flex:1;min-width:0;border:1px solid #d7deea;border-radius:12px;padding:10px;font:14px system-ui;outline:none}
-    .raspi-chat-input:focus{border-color:#4f6bff;box-shadow:0 0 0 3px rgba(79,107,255,.12)}
-    .raspi-chat-send{border:0;border-radius:12px;background:#4f6bff;color:#fff;min-width:44px;padding:0 14px;font-weight:800;cursor:pointer}
+    .raspi-chat-button,.raspi-chat-panel,.raspi-chat-panel *{box-sizing:border-box}
+    .raspi-chat-button{position:fixed!important;right:18px!important;bottom:18px!important;z-index:2147483000!important;border:0!important;border-radius:999px!important;background:#172033!important;color:#fff!important;padding:13px 17px!important;font:700 14px/1 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;box-shadow:0 14px 35px rgba(0,0,0,.18)!important;cursor:pointer!important;margin:0!important}
+    .raspi-chat-panel{position:fixed!important;right:18px!important;bottom:72px!important;z-index:2147483000!important;width:360px!important;max-width:calc(100vw - 32px)!important;height:min(460px,calc(100dvh - 96px))!important;display:none!important;flex-direction:column!important;border-radius:22px!important;overflow:hidden!important;background:#fff!important;box-shadow:0 22px 70px rgba(0,0,0,.22)!important;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;margin:0!important;padding:0!important;border:0!important}
+    .raspi-chat-panel.open{display:flex!important}
+    .raspi-chat-header{display:flex!important;align-items:center!important;justify-content:space-between!important;gap:12px!important;height:58px!important;min-height:58px!important;max-height:58px!important;padding:11px 14px 11px 16px!important;background:#172033!important;color:#fff!important;font-weight:800!important;line-height:1.2!important;flex:0 0 58px!important;margin:0!important;border:0!important}
+    .raspi-chat-title{display:flex!important;flex-direction:column!important;gap:2px!important;min-width:0!important;margin:0!important;padding:0!important}
+    .raspi-chat-title strong{display:block!important;font-size:14px!important;line-height:17px!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis!important;margin:0!important;color:#fff!important}
+    .raspi-chat-title span{display:block!important;font-size:11px!important;line-height:14px!important;font-weight:600!important;color:rgba(255,255,255,.68)!important;margin:0!important}
+    .raspi-chat-close{width:34px!important;height:34px!important;display:grid!important;place-items:center!important;border:0!important;border-radius:12px!important;background:rgba(255,255,255,.1)!important;color:#fff!important;font:800 22px/1 system-ui!important;cursor:pointer!important;flex:0 0 auto!important;margin:0!important;padding:0!important}
+    .raspi-chat-close:hover{background:rgba(255,255,255,.16)!important}
+    .raspi-chat-messages{flex:1 1 auto!important;height:0!important;min-height:0!important;padding:14px!important;overflow:auto!important;background:#f4f6fb!important;color:#172033!important;font-size:14px!important;overscroll-behavior:contain!important;margin:0!important;border:0!important}
+    .raspi-chat-message{margin:0 0 10px!important;padding:10px 12px!important;border-radius:14px!important;background:#fff!important;color:#172033!important;line-height:1.45!important;word-wrap:break-word!important;white-space:pre-wrap!important;max-width:100%!important;border:0!important}
+    .raspi-chat-message.operator{background:#dfe8ff!important;margin-left:18px!important}
+    .raspi-chat-message.visitor{background:#fff!important;margin-right:18px!important}
+    .raspi-chat-system{opacity:.7!important;font-size:12px!important;line-height:1.35!important;padding:4px 2px!important;color:#172033!important;margin:0!important;background:transparent!important}
+    .raspi-chat-form{display:flex!important;align-items:stretch!important;gap:8px!important;height:62px!important;min-height:62px!important;max-height:62px!important;padding:10px!important;border-top:1px solid #e7ebf3!important;background:#fff!important;flex:0 0 62px!important;margin:0!important}
+    .raspi-chat-input{flex:1 1 auto!important;min-width:0!important;height:42px!important;border:1px solid #d7deea!important;border-radius:12px!important;padding:0 10px!important;font:14px/42px system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif!important;outline:none!important;background:#fff!important;color:#172033!important;margin:0!important;box-shadow:none!important}
+    .raspi-chat-input:focus{border-color:#4f6bff!important;box-shadow:0 0 0 3px rgba(79,107,255,.12)!important}
+    .raspi-chat-send{border:0!important;border-radius:12px!important;background:#4f6bff!important;color:#fff!important;width:44px!important;min-width:44px!important;height:42px!important;padding:0!important;font:800 18px/42px system-ui!important;cursor:pointer!important;margin:0!important;display:grid!important;place-items:center!important}
     @media (max-width: 560px){
-      .raspi-chat-button{right:14px;bottom:14px;padding:13px 16px}
-      .raspi-chat-panel{right:10px;left:10px;bottom:74px;width:auto;max-width:none;height:auto;min-height:330px;max-height:calc(100dvh - 92px);border-radius:20px}
-      .raspi-chat-header{min-height:50px;padding:10px 12px 10px 14px}
-      .raspi-chat-close{width:38px;height:38px;border-radius:13px}
-      .raspi-chat-messages{padding:12px;font-size:13px;min-height:180px;max-height:calc(100dvh - 220px)}
-      .raspi-chat-message.operator{margin-left:10px}
-      .raspi-chat-message.visitor{margin-right:10px}
-      .raspi-chat-form{padding:9px}
+      .raspi-chat-button{right:14px!important;bottom:14px!important;padding:13px 16px!important}
+      .raspi-chat-panel{right:10px!important;left:10px!important;bottom:74px!important;width:auto!important;max-width:none!important;height:min(430px,calc(100dvh - 92px))!important;border-radius:20px!important}
+      .raspi-chat-header{height:56px!important;min-height:56px!important;max-height:56px!important;flex-basis:56px!important;padding:10px 12px 10px 14px!important}
+      .raspi-chat-close{width:38px!important;height:38px!important;border-radius:13px!important}
+      .raspi-chat-messages{height:0!important;min-height:0!important;padding:12px!important;font-size:13px!important;max-height:none!important}
+      .raspi-chat-message.operator{margin-left:10px!important}
+      .raspi-chat-message.visitor{margin-right:10px!important}
+      .raspi-chat-form{height:60px!important;min-height:60px!important;max-height:60px!important;flex-basis:60px!important;padding:9px!important}
+      .raspi-chat-input{height:42px!important;line-height:42px!important}
+      .raspi-chat-send{height:42px!important;line-height:42px!important}
     }
     @media (max-height: 560px){
-      .raspi-chat-panel{top:10px;bottom:10px;height:auto;max-height:none}
-      .raspi-chat-messages{min-height:0;max-height:none}
+      .raspi-chat-panel{top:10px!important;bottom:10px!important;height:auto!important;max-height:none!important}
+      .raspi-chat-messages{height:0!important;min-height:0!important;max-height:none!important}
     }
   `;
   document.head.appendChild(style);
