@@ -1,4 +1,4 @@
-# VPS-only installation with FastPanel
+# WSChat VPS-only installation with FastPanel
 
 This is the current MVP architecture.
 
@@ -12,7 +12,7 @@ VPS with FastPanel
   ├── widget.example.ru  -> static embeddable widget
   ├── api.example.ru     -> reverse proxy to local backend
   ├── Node.js backend    -> 127.0.0.1:3000
-  ├── SQLite database    -> /opt/raspi-chat/data/chat.sqlite
+  ├── SQLite database    -> /opt/ws-chat/data/chat.sqlite
   └── Telegram bot       -> backend process
 ```
 
@@ -43,7 +43,7 @@ api.example.ru     A  VPS_IP
 ## Project directories
 
 ```text
-/opt/raspi-chat/
+/opt/ws-chat/
   source/     # git clone
   data/       # SQLite database
   logs/       # logs
@@ -89,9 +89,9 @@ pm2 -v
 ## Clone project
 
 ```bash
-sudo mkdir -p /opt/raspi-chat
-sudo chown -R $USER:$USER /opt/raspi-chat
-cd /opt/raspi-chat
+sudo mkdir -p /opt/ws-chat
+sudo chown -R $USER:$USER /opt/ws-chat
+cd /opt/ws-chat
 git clone https://github.com/viktor138irk/chat.git source
 cd source
 npm install
@@ -113,7 +113,7 @@ APP_PORT=3000
 PUBLIC_API_URL=https://api.example.ru
 PUBLIC_WS_URL=wss://api.example.ru/ws
 TRUST_PROXY=true
-DATABASE_PATH=/opt/raspi-chat/data/chat.sqlite
+DATABASE_PATH=/opt/ws-chat/data/chat.sqlite
 ADMIN_ORIGIN=https://admin.example.ru
 WIDGET_ORIGIN=https://widget.example.ru
 TELEGRAM_BOT_TOKEN=
@@ -123,7 +123,7 @@ JWT_SECRET=change-me-to-long-random-string
 Create data directory:
 
 ```bash
-mkdir -p /opt/raspi-chat/data /opt/raspi-chat/logs /opt/raspi-chat/backups /opt/raspi-chat/updates
+mkdir -p /opt/ws-chat/data /opt/ws-chat/logs /opt/ws-chat/backups /opt/ws-chat/updates
 ```
 
 ## Start backend
@@ -149,7 +149,7 @@ Expected:
 Production with PM2:
 
 ```bash
-pm2 start backend/src/server.js --name raspi-chat-backend
+pm2 start backend/src/server.js --name wschat-backend
 pm2 save
 pm2 startup
 ```
@@ -204,7 +204,7 @@ sudo systemctl reload nginx
 ## Build admin and widget
 
 ```bash
-cd /opt/raspi-chat/source
+cd /opt/ws-chat/source
 npm run build:admin
 npm run build:widget
 ```
