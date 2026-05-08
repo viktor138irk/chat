@@ -1,0 +1,23 @@
+{
+  "name": "raspi-telegram-live-chat",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Self-hosted live chat with Raspberry Pi backend, Telegram operators, FastPanel-safe frontend deployment, and embeddable widget.",
+  "workspaces": [
+    "backend",
+    "admin-panel",
+    "widget",
+    "deploy/deploy-agent"
+  ],
+  "scripts": {
+    "dev:backend": "npm --workspace backend run dev",
+    "dev:admin": "npm --workspace admin-panel run dev",
+    "build:admin": "npm --workspace admin-panel run build",
+    "build:widget": "npm --workspace widget run build",
+    "build": "npm run build:admin && npm run build:widget",
+    "deploy:frontend": "npm --workspace deploy/deploy-agent run deploy"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
