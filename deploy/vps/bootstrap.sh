@@ -2,16 +2,16 @@
 set -euo pipefail
 
 NODE_MAJOR="${NODE_MAJOR:-20}"
-PROJECT_ROOT="${PROJECT_ROOT:-/opt/vps-chat}"
-SOURCE_PATH="${SOURCE_PATH:-/opt/vps-chat/source}"
-DATA_PATH="${DATA_PATH:-/opt/vps-chat/data}"
-LOGS_PATH="${LOGS_PATH:-/opt/vps-chat/logs}"
-BACKUPS_PATH="${BACKUPS_PATH:-/opt/vps-chat/backups}"
-UPDATES_PATH="${UPDATES_PATH:-/opt/vps-chat/updates}"
-PM2_PROCESS_NAME="${PM2_PROCESS_NAME:-vps-chat-backend}"
+PROJECT_ROOT="${PROJECT_ROOT:-/opt/ws-chat}"
+SOURCE_PATH="${SOURCE_PATH:-/opt/ws-chat/source}"
+DATA_PATH="${DATA_PATH:-/opt/ws-chat/data}"
+LOGS_PATH="${LOGS_PATH:-/opt/ws-chat/logs}"
+BACKUPS_PATH="${BACKUPS_PATH:-/opt/ws-chat/backups}"
+UPDATES_PATH="${UPDATES_PATH:-/opt/ws-chat/updates}"
+PM2_PROCESS_NAME="${PM2_PROCESS_NAME:-wschat-backend}"
 
 log() {
-  printf '\n[vps-bootstrap] %s\n' "$1"
+  printf '\n[wschat-bootstrap] %s\n' "$1"
 }
 
 if [[ "${EUID}" -ne 0 ]]; then
